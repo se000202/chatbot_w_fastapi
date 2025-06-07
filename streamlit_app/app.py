@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # FastAPI 서버 URL
-API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/chat")
+API_URL = "https://web-production-b2180.up.railway.app/chat"
 
 # Session state에 messages 리스트 유지 (초기화)
 if "messages" not in st.session_state:
