@@ -13,7 +13,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
-# In-memory recent code storage (session-less simple version)
+# In-memory recent code storage (simple version, can be extended per session)
 recent_code = {"last_code": ""}
 
 # Request model
@@ -60,6 +60,7 @@ def detect_intent(messages: List[Dict[str, str]]) -> str:
         "Run_code should be used only if the user provides valid Python code to execute "
         "or explicitly says to run the previously generated code.\n"
         "If the user asks something like 'can you run the code above?', classify it as 'run_code'.\n"
+        "If the user provides general chat or instructions not containing code, classify it as 'chat'.\n"
         "User message: " + last_msg
     )
     response = client.chat.completions.create(
@@ -115,27 +116,40 @@ async def chat_endpoint(req: ChatRequest):
         ]:
             code_to_run = recent_code.get("last_code", "")
 
-        # Safety check
-        if not is_probable_python_code(code_to_run):
-            return {"intent": "run_code", "error": "No valid Python code detected. Please provide valid Python code or ask to run the previous code."}
+        # Try running code
+        try:
+            if not is_probable_python_code(code_to_run):
+                raise ValueError("No valid Python code detected.")
 
-        # Run code
-        output = run_python_code(code_to_run)
+            output = run_python_code(code_to_run)
 
-        # Explain output
-        explain_messages = [
-            {"role": "system", "content": "You are a helpful assistant that explains Python code output."},
-            {
-                "role": "user",
-                "content": (
-                    f"I ran this Python code:\n```python\n{code_to_run}\n```\n"
-                    f"The output was:\n```\n{output}\n```\n"
-                    "Please explain the output."
-                )
+            # Execution successful → GPT explain
+            explain_messages = [
+                {"role": "system", "content": "You are a helpful assistant that explains Python code output."},
+                {
+                    "role": "user",
+                    "content": (
+                        f"I ran this Python code:\n```python\n{code_to_run}\n```\n"
+                        f"The output was:\n```\n{output}\n```\n"
+                        "Please explain the output."
+                    )
+                }
+            ]
+            answer = get_chatbot_response(explain_messages)
+            return {"intent": intent, "output": output, "response": answer}
+
+        except Exception as e:
+            # Fallback to chat if execution failed
+            fallback_messages = messages.copy()
+            fallback_messages.append({"role": "system", "content": "Previous code execution failed or was not valid. Please continue the conversation."})
+
+            fallback_answer = get_chatbot_response(fallback_messages)
+
+            return {
+                "intent": "chat_fallback",
+                "error": str(e),
+                "response": fallback_answer
             }
-        ]
-        answer = get_chatbot_response(explain_messages)
-        return {"intent": intent, "output": output, "response": answer}
 
     else:
         # General chat
