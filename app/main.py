@@ -14,14 +14,14 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
-# In-memory recent code storage (simple global version)
+# In-memory recent code storage
 recent_code = {"last_code": ""}
 
-# Request model (as you requested, fixed this)
+# Request model (as requested)
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
 
-# Run Python code safely (using temp file for multiline code)
+# Run Python code safely (temp file for multiline code)
 def run_python_code(code: str) -> str:
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmpfile:
@@ -32,7 +32,7 @@ def run_python_code(code: str) -> str:
             ["python3", tmpfile_path],
             capture_output=True,
             text=True,
-            timeout=5  # prevent long-running code
+            timeout=5
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -41,21 +41,26 @@ def run_python_code(code: str) -> str:
     except Exception as e:
         return f"Exception: {str(e)}"
 
-# Extract latest code block from GPT response
+# Improved extract_code_block
 def extract_code_block(text: str) -> str:
     # Try to extract ```python ... ``` block first
     pattern = r"```python(.*?)```"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
-        return matches[-1].strip()
+        code = matches[-1].strip()
+        # Remove accidental "python\n" at the beginning if present
+        if code.lower().startswith('python'):
+            code_lines = code.splitlines()
+            if len(code_lines) > 1 and code_lines[0].strip() == 'python':
+                code = '\n'.join(code_lines[1:])
+        return code.strip()
     
-    # Fallback: simple heuristic → extract lines starting with def/print/import
+    # Fallback: extract starting from def/print/import
     fallback_pattern = r"(def .*?)(\n\n|$)"
     fallback_matches = re.findall(fallback_pattern, text, re.DOTALL)
     if fallback_matches:
         return fallback_matches[0][0].strip()
     
-    # Another fallback: look for code lines in text
     code_lines = []
     in_code = False
     for line in text.splitlines():
