@@ -32,7 +32,7 @@ async def chat_endpoint(payload: ChatRequest):
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": msg.role, "content": msg.content} for msg in payload.messages],
-            max_tokens=200,
+            max_tokens=2048,
             temperature=0.7
         )
 
