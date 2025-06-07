@@ -23,7 +23,7 @@ def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
     )
     return response.choices[0].message.content.strip()
 
-# Main chat endpoint → Chat only!
+# Main chat endpoint → Chat only
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     messages = req.messages
