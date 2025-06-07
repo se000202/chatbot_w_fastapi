@@ -3,17 +3,24 @@ from pydantic import BaseModel
 from typing import List, Dict
 import subprocess
 import os
+import re
 from dotenv import load_dotenv
 from openai import OpenAI
 
+# Load API key
 load_dotenv()
-
-app = FastAPI()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-class ChatRequest(BaseModel):
-    messages: List[Dict[str, str]]  # messages 리스트로 변경
+app = FastAPI()
 
+# In-memory recent code storage (session-less simple version)
+recent_code = {"last_code": ""}
+
+# Request model
+class ChatRequest(BaseModel):
+    messages: List[Dict[str, str]]
+
+# Run Python code safely
 def run_python_code(code: str) -> str:
     try:
         result = subprocess.run(
@@ -29,13 +36,30 @@ def run_python_code(code: str) -> str:
     except Exception as e:
         return f"Exception: {str(e)}"
 
+# Extract latest code block from GPT response
+def extract_code_block(text: str) -> str:
+    pattern = r"```python(.*?)```"
+    matches = re.findall(pattern, text, re.DOTALL)
+    if matches:
+        return matches[-1].strip()
+    return ""
+
+# Simple heuristic to check if it's probably Python code
+def is_probable_python_code(text: str) -> bool:
+    keywords = ['def ', 'print(', 'for ', 'while ', 'if ', 'import ', 'class ', 'lambda ', '=']
+    return any(kw in text for kw in keywords) or text.strip().startswith('```python')
+
+# Detect intent
 def detect_intent(messages: List[Dict[str, str]]) -> str:
-    # user 역할 메시지 중 마지막 메시지를 가져와 의도 판단
     user_msgs = [m["content"] for m in messages if m["role"] == "user"]
     last_msg = user_msgs[-1] if user_msgs else ""
 
     prompt = (
-        "Classify the user intent into one of these categories only: 'write_code', 'run_code', 'chat'.\n"
+        "Classify the user intent into one of these categories only: "
+        "'write_code', 'run_code', 'chat'.\n"
+        "Run_code should be used only if the user provides valid Python code to execute "
+        "or explicitly says to run the previously generated code.\n"
+        "If the user asks something like 'can you run the code above?', classify it as 'run_code'.\n"
         "User message: " + last_msg
     )
     response = client.chat.completions.create(
@@ -51,6 +75,7 @@ def detect_intent(messages: List[Dict[str, str]]) -> str:
     else:
         return "chat"
 
+# Get GPT response
 def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -58,24 +83,46 @@ def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
     )
     return response.choices[0].message.content.strip()
 
+# Main chat endpoint
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     messages = req.messages
 
+    # Detect intent
     intent = detect_intent(messages)
 
+    # Intent handling
     if intent == "write_code":
-        # 코딩 요청일 때 GPT에게 그대로 전달
+        # Code generation
         code_response = get_chatbot_response(messages)
+
+        # Extract code block and store it
+        code_block = extract_code_block(code_response)
+        recent_code["last_code"] = code_block
+
         return {"intent": intent, "code": code_response}
 
     elif intent == "run_code":
-        # 실행 요청일 때, user 메시지 중 마지막을 코드로 간주
         user_msgs = [m["content"] for m in messages if m["role"] == "user"]
         code_to_run = user_msgs[-1] if user_msgs else ""
 
+        # If user said "run previous code", use recent code block
+        if code_to_run.strip().lower() in [
+            "위 코드를 실행해 줘",
+            "위 코드 실행해줘",
+            "execute the above code",
+            "run the previous code"
+        ]:
+            code_to_run = recent_code.get("last_code", "")
+
+        # Safety check
+        if not is_probable_python_code(code_to_run):
+            return {"intent": "run_code", "error": "No valid Python code detected. Please provide valid Python code or ask to run the previous code."}
+
+        # Run code
         output = run_python_code(code_to_run)
 
+        # Explain output
         explain_messages = [
             {"role": "system", "content": "You are a helpful assistant that explains Python code output."},
             {
@@ -91,6 +138,6 @@ async def chat_endpoint(req: ChatRequest):
         return {"intent": intent, "output": output, "response": answer}
 
     else:
-        # 일반 대화
+        # General chat
         answer = get_chatbot_response(messages)
         return {"intent": intent, "response": answer}
