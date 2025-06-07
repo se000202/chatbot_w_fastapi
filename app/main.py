@@ -16,9 +16,9 @@ app.add_middleware(
 
 @app.get("/")
 async def root():
-    return {"message": "Chatbot API is running"}
+    return {"message": "Chatbot API with context is running"}
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    bot_reply = get_chatbot_response(request.message)
+    bot_reply = get_chatbot_response(request.messages)
     return ChatResponse(response=bot_reply)
