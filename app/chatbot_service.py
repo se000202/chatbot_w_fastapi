@@ -13,7 +13,7 @@ def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
     print("Sending messages to OpenAI:", messages)  # 디버그용 로그
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4.1-mini",
             messages=messages
         )
         print("Received response:", response)  # 디버그용 로그
