@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import re
 from math import prod
+from functools import reduce  # 미리 import
 
 # Load API key
 load_dotenv()
@@ -28,16 +29,23 @@ def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
 # Expression calculation (safe eval)
 def compute_expression(expr: str) -> str:
     try:
-        # Provide math functions and built-ins safely
+        # Safe globals with minimal necessary functions
         safe_globals = {
-            "__builtins__": {},
+            "__builtins__": {},  # safer than None on Python 3.12+
             "sum": sum,
             "range": range,
             "prod": prod,
             "round": round,
-            "reduce": __import__('functools').reduce,
+            "reduce": reduce,
             "all": all
         }
+
+        print(f"[DEBUG] About to eval expression: {repr(expr)} (type: {type(expr)})")
+
+        # Ensure expr is string
+        if not isinstance(expr, str):
+            raise ValueError("Expression is not a string!")
+
         result = eval(expr, safe_globals)
         return f"계산 결과: {result}"
     except Exception as e:
@@ -68,7 +76,7 @@ async def chat_endpoint(req: ChatRequest):
             {"role": "user", "content": last_msg}
         ]
         expr = get_chatbot_response(system_prompt)
-        print(f"[DEBUG] Generated expression: {expr}")
+        print(f"[DEBUG] Generated expression: {repr(expr)}")  # Added repr for full debug
 
         result = compute_expression(expr)
         return {"response": result}
