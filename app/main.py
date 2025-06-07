@@ -7,6 +7,7 @@ from openai import OpenAI
 import re
 from math import prod
 from functools import reduce  # 미리 import
+import math
 
 # Load API key
 load_dotenv()
