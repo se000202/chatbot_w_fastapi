@@ -3,15 +3,21 @@ import os
 from dotenv import load_dotenv
 from typing import List, Dict
 
-# Load .env (로컬 실행 시 사용)
+# Load .env (로컬 개발 시 사용)
 load_dotenv()
 
-# Set OpenAI API key
-openai.api_key = os.getenv("OPENAI_API_KEY")
+# 최신 openai 라이브러리 (1.x 이상)에서는 client 객체 사용
+client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
-    response = openai.ChatCompletion.create(
-        model="gpt-4.1-mini",
-        messages=messages
-    )
-    return response["choices"][0]["message"]["content"].strip()
+    print("Sending messages to OpenAI:", messages)  # 디버그용 로그
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=messages
+        )
+        print("Received response:", response)  # 디버그용 로그
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print("OpenAI API call failed:", str(e))
+        raise
