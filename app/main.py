@@ -10,7 +10,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # OpenAI API KEY 설정
-openai.api_key = os.getenv("OPENAI_API_KEY")
+openai_api_key = os.getenv("OPENAI_API_KEY")
+
+# openai.Client 초기화
+client = openai.OpenAI(api_key=openai_api_key)
 
 app = FastAPI()
 
@@ -26,14 +29,14 @@ class ChatRequest(BaseModel):
 async def chat_endpoint(payload: ChatRequest):
     try:
         # OpenAI API 호출 (GPT-4.1: gpt-4o 사용)
-        response = openai.ChatCompletion.create(
-            model="gpt-4o",   # 최신 GPT-4.1 모델
+        response = client.chat.completions.create(
+            model="gpt-4o",
             messages=[{"role": msg.role, "content": msg.content} for msg in payload.messages],
             max_tokens=200,
             temperature=0.7
         )
 
-        bot_reply = response["choices"][0]["message"]["content"].strip()
+        bot_reply = response.choices[0].message.content.strip()
 
         # 정상 응답 반환
         return {"response": bot_reply}
