@@ -37,7 +37,8 @@ def compute_expression(expr: str) -> str:
             "prod": prod,
             "round": round,
             "reduce": reduce,
-            "all": all
+            "all": all,
+            "int": int
         }
 
         print(f"[DEBUG] About to eval expression: {repr(expr)} (type: {type(expr)})")
