@@ -30,7 +30,7 @@ def compute_expression(expr: str) -> str:
     try:
         # Provide math functions and built-ins safely
         safe_globals = {
-            "__builtins__": None,
+            "__builtins__": {},
             "sum": sum,
             "range": range,
             "prod": prod,
