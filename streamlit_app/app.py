@@ -1,9 +1,7 @@
 import streamlit as st
 import requests
 import os
-st.write(f"Session messages count: {len(st.session_state.messages)}")
 API_URL = os.getenv("API_URL")
-st.write(f"API_URL = {API_URL}")  # 여기 추가 → URL 확인용
 
 if "messages" not in st.session_state:
     st.session_state.messages = [
@@ -25,16 +23,11 @@ if st.button("Send"):
     if user_input.strip() != "":
         st.session_state.messages.append({"role": "user", "content": user_input})
 
-        st.write("Sending POST request...")  # 디버그용 출력
-        st.write(st.session_state.messages)  # 현재 messages 확인
-
         try:
             response = requests.post(
                 API_URL,
                 json={"messages": st.session_state.messages}
             )
-            st.write(f"Response status code: {response.status_code}")  # 응답 코드 출력
-            st.write(f"Response body: {response.text}")  # 응답 본문 출력
 
             if response.status_code == 200:
                 bot_reply = response.json()["response"]
