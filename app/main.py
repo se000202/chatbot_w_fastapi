@@ -13,10 +13,10 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
-# In-memory recent code storage (simple version, can be extended per session)
+# In-memory recent code storage (simple global version)
 recent_code = {"last_code": ""}
 
-# Request model
+# Request model (as you requested, fixed this)
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
 
@@ -27,7 +27,7 @@ def run_python_code(code: str) -> str:
             ["python3", "-c", code],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5  # prevent long-running code
         )
         if result.returncode == 0:
             return result.stdout.strip()
