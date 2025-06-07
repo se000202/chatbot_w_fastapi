@@ -25,11 +25,18 @@ def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
     )
     return response.choices[0].message.content.strip()
 
-# Expression calculation (careful with eval)
+# Expression calculation (safe eval)
 def compute_expression(expr: str) -> str:
     try:
         # Provide math functions and built-ins safely
-        safe_globals = {"__builtins__": None, "sum": sum, "range": range, "prod": prod, "round": round, "reduce": __import__('functools').reduce}
+        safe_globals = {
+            "__builtins__": None,
+            "sum": sum,
+            "range": range,
+            "prod": prod,
+            "round": round,
+            "reduce": __import__('functools').reduce
+        }
         result = eval(expr, safe_globals)
         return f"계산 결과: {result}"
     except Exception as e:
@@ -44,17 +51,19 @@ async def chat_endpoint(req: ChatRequest):
     last_msg = user_msgs[-1] if user_msgs else ""
 
     # Trigger keywords
-    calc_keywords = ["합", "곱", "피보나치", "product of primes", "fibonacci"]
+    calc_keywords = ["합", "곱", "피보나치", "product of primes", "sum of primes", "fibonacci"]
 
     # If message contains calculation keyword → use calculation mode
     if any(keyword in last_msg for keyword in calc_keywords):
-        # System prompt to force GPT to output one-line expression
+        # Strong system prompt to avoid is_prime and enforce list comprehension
         system_prompt = [
             {"role": "system", "content": "You are an assistant that converts calculation requests into ONE-LINE Python expressions. "
-                                          "Do not define functions. Do not use multi-line code. "
-                                          "For product of primes, output prod([...]). "
-                                          "For Fibonacci, output a one-line expression using reduce or Binet's formula. "
-                                          "Only output the expression."},
+                                          "You must NOT define functions. You must NOT use 'is_prime' or any undefined functions. "
+                                          "You must use list comprehension with 'all(x % d != 0 ...)' inline to detect primes. "
+                                          "If the user asks for sum of primes, output 'sum([...])' with inline prime detection. "
+                                          "If the user asks for product of primes, output 'prod([...])' with inline prime detection. "
+                                          "If the user asks for the nth Fibonacci number, output a one-line expression using reduce or Binet's formula. "
+                                          "Only output the expression and nothing else."},
             {"role": "user", "content": last_msg}
         ]
         expr = get_chatbot_response(system_prompt)
