@@ -7,7 +7,7 @@ from openai import OpenAI
 import re
 from math import prod
 from functools import reduce  # 미리 import
-import math
+import math  # math 모듈 추가
 
 # Load API key
 load_dotenv()
@@ -32,7 +32,7 @@ def compute_expression(expr: str) -> str:
     try:
         # Safe globals with minimal necessary functions
         safe_globals = {
-            "__builtins__": {},
+            "__builtins__": {},  # safer than None
             "sum": sum,
             "range": range,
             "prod": prod,
@@ -82,7 +82,8 @@ async def chat_endpoint(req: ChatRequest):
                                           "You must use list comprehension with 'all(x % d != 0 ...)' inline to detect primes. "
                                           "If the user asks for sum of primes, output 'sum([...])' with inline prime detection. "
                                           "If the user asks for product of primes, output 'prod([...])' with inline prime detection. "
-                                          "If the user asks for the nth Fibonacci number, output a one-line expression using reduce or Binet's formula. "
+                                          "If the user asks for the nth Fibonacci number, you MUST use a one-line expression with 'reduce' only. "
+                                          "Do NOT use Binet’s formula or lists. Only use reduce-based expression. "
                                           "Only output the expression and nothing else."},
             {"role": "user", "content": last_msg}
         ]
