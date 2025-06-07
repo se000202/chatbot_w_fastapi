@@ -22,8 +22,8 @@ async def root():
 async def chat_endpoint(payload: ChatRequest):
     try:
         # 예시 OpenAI 호출 → 여기에 실제 호출 넣기 가능
-        # bot_reply = call_openai_api(payload.messages)
-        bot_reply = "Hello! How can I assist you today?"
+        bot_reply = call_openai_api(payload.messages)
+        # bot_reply = "Hello! How can I assist you today?"
 
         # ✅ 반드시 JSON으로 정상 응답
         return {"response": bot_reply}
