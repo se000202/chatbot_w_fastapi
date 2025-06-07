@@ -4,6 +4,7 @@ from typing import List, Dict
 import subprocess
 import os
 import re
+import tempfile
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -20,11 +21,15 @@ recent_code = {"last_code": ""}
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
 
-# Run Python code safely
+# Run Python code safely (using temp file for multiline code)
 def run_python_code(code: str) -> str:
     try:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as tmpfile:
+            tmpfile.write(code)
+            tmpfile_path = tmpfile.name
+
         result = subprocess.run(
-            ["python3", "-c", code],
+            ["python3", tmpfile_path],
             capture_output=True,
             text=True,
             timeout=5  # prevent long-running code
@@ -38,10 +43,29 @@ def run_python_code(code: str) -> str:
 
 # Extract latest code block from GPT response
 def extract_code_block(text: str) -> str:
+    # Try to extract ```python ... ``` block first
     pattern = r"```python(.*?)```"
     matches = re.findall(pattern, text, re.DOTALL)
     if matches:
         return matches[-1].strip()
+    
+    # Fallback: simple heuristic → extract lines starting with def/print/import
+    fallback_pattern = r"(def .*?)(\n\n|$)"
+    fallback_matches = re.findall(fallback_pattern, text, re.DOTALL)
+    if fallback_matches:
+        return fallback_matches[0][0].strip()
+    
+    # Another fallback: look for code lines in text
+    code_lines = []
+    in_code = False
+    for line in text.splitlines():
+        if any(kw in line for kw in ['def ', 'print(', 'for ', 'while ', 'if ', 'import ', 'class ', 'lambda ', '=']):
+            in_code = True
+        if in_code:
+            code_lines.append(line)
+    if code_lines:
+        return '\n'.join(code_lines).strip()
+    
     return ""
 
 # Simple heuristic to check if it's probably Python code
@@ -94,11 +118,21 @@ async def chat_endpoint(req: ChatRequest):
 
     # Intent handling
     if intent == "write_code":
+        # Strong system prompt to force code block output
+        strong_prompt = [
+            {"role": "system", "content": "You are a helpful assistant that writes ONLY Python code. "
+                                          "ALWAYS put the code inside ```python ... ``` block without explanations. "
+                                          "DO NOT output anything other than the code block."}
+        ] + messages
+
         # Code generation
-        code_response = get_chatbot_response(messages)
+        code_response = get_chatbot_response(strong_prompt)
+        print(f"[DEBUG] Full GPT response:\n{code_response}")
 
         # Extract code block and store it
         code_block = extract_code_block(code_response)
+        print(f"[DEBUG] Extracted code block:\n{code_block}")
+
         recent_code["last_code"] = code_block
 
         return {"intent": intent, "code": code_response}
@@ -115,6 +149,8 @@ async def chat_endpoint(req: ChatRequest):
             "run the previous code"
         ]:
             code_to_run = recent_code.get("last_code", "")
+
+        print(f"[DEBUG] Code to run:\n{code_to_run}")
 
         # Try running code
         try:
