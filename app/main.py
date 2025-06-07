@@ -32,7 +32,7 @@ def compute_expression(expr: str) -> str:
     try:
         # Safe globals with minimal necessary functions
         safe_globals = {
-            "__builtins__": {},  # safer than None on Python 3.12+
+            "__builtins__": {},
             "sum": sum,
             "range": range,
             "prod": prod,
@@ -40,7 +40,15 @@ def compute_expression(expr: str) -> str:
             "reduce": reduce,
             "all": all,
             "int": int,
-            "math": math
+            "float": float,
+            "abs": abs,
+            "pow": pow,
+            "math": math,
+            "sqrt": math.sqrt,
+            "log": math.log,
+            "log10": math.log10,
+            "exp": math.exp,
+            "log2" : math.log2
         }
 
         print(f"[DEBUG] About to eval expression: {repr(expr)} (type: {type(expr)})")
