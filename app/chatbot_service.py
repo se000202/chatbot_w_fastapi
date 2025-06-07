@@ -11,7 +11,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4.1-mini",
         messages=messages
     )
     return response["choices"][0]["message"]["content"].strip()
