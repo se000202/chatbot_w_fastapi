@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import os
 st.write(f"Session messages count: {len(st.session_state.messages)}")
-API_URL = os.getenv("FASTAPI_URL", "https://web-production-b2180.up.railway.app/chat")
+API_URL = os.getenv("API_URL")
 st.write(f"API_URL = {API_URL}")  # 여기 추가 → URL 확인용
 
 if "messages" not in st.session_state:
