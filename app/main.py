@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
+from typing import List, Dict
 import subprocess
 import os
 from dotenv import load_dotenv
@@ -11,7 +12,7 @@ app = FastAPI()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 class ChatRequest(BaseModel):
-    message: str
+    messages: List[Dict[str, str]]  # messages 리스트로 변경
 
 def run_python_code(code: str) -> str:
     try:
@@ -28,10 +29,14 @@ def run_python_code(code: str) -> str:
     except Exception as e:
         return f"Exception: {str(e)}"
 
-def detect_intent(user_message: str) -> str:
+def detect_intent(messages: List[Dict[str, str]]) -> str:
+    # user 역할 메시지 중 마지막 메시지를 가져와 의도 판단
+    user_msgs = [m["content"] for m in messages if m["role"] == "user"]
+    last_msg = user_msgs[-1] if user_msgs else ""
+
     prompt = (
         "Classify the user intent into one of these categories only: 'write_code', 'run_code', 'chat'.\n"
-        "User message: " + user_message
+        "User message: " + last_msg
     )
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -46,7 +51,7 @@ def detect_intent(user_message: str) -> str:
     else:
         return "chat"
 
-def get_chatbot_response(messages) -> str:
+def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages
@@ -55,44 +60,37 @@ def get_chatbot_response(messages) -> str:
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
-    user_message = req.message
+    messages = req.messages
 
-    intent = detect_intent(user_message)
+    intent = detect_intent(messages)
 
     if intent == "write_code":
-        # GPT에게 코딩 요청 전달 → 코드 텍스트 생성
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant who writes Python code."},
-            {"role": "user", "content": user_message},
-        ]
+        # 코딩 요청일 때 GPT에게 그대로 전달
         code_response = get_chatbot_response(messages)
         return {"intent": intent, "code": code_response}
 
     elif intent == "run_code":
-        # Python 코드 실행
-        output = run_python_code(user_message)
+        # 실행 요청일 때, user 메시지 중 마지막을 코드로 간주
+        user_msgs = [m["content"] for m in messages if m["role"] == "user"]
+        code_to_run = user_msgs[-1] if user_msgs else ""
 
-        messages = [
+        output = run_python_code(code_to_run)
+
+        explain_messages = [
             {"role": "system", "content": "You are a helpful assistant that explains Python code output."},
             {
                 "role": "user",
                 "content": (
-                    f"I ran this Python code:\n```python\n{user_message}\n```\n"
+                    f"I ran this Python code:\n```python\n{code_to_run}\n```\n"
                     f"The output was:\n```\n{output}\n```\n"
                     "Please explain the output."
-                ),
-            },
+                )
+            }
         ]
-        answer = get_chatbot_response(messages)
-
+        answer = get_chatbot_response(explain_messages)
         return {"intent": intent, "output": output, "response": answer}
 
     else:
         # 일반 대화
-        messages = [
-            {"role": "system", "content": "You are a friendly conversational assistant."},
-            {"role": "user", "content": user_message},
-        ]
         answer = get_chatbot_response(messages)
-
         return {"intent": intent, "response": answer}
