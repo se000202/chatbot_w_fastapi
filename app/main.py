@@ -35,7 +35,7 @@ def compute_expression(expr: str) -> str:
             "range": range,
             "prod": prod,
             "round": round,
-            "reduce": __import__('functools').reduce
+            "reduce": __import__('functools').reduce,
             "all": all
         }
         result = eval(expr, safe_globals)
