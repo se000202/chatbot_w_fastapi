@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 import subprocess
 import os
@@ -39,7 +39,6 @@ def detect_intent(user_message: str) -> str:
         temperature=0
     )
     intent = response.choices[0].message.content.strip().lower()
-    # 간단히 의도 텍스트가 포함되어 있는지 확인
     if "write_code" in intent:
         return "write_code"
     elif "run_code" in intent:
