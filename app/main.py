@@ -153,7 +153,7 @@ async def chat_stream_endpoint(req: ChatRequest):
                                           "If the user asks for sum of primes, output 'sum([...])'. "
                                           "If the user asks for product of primes, output 'prod([...])'. "
                                           "If the user asks for the nth Fibonacci number, you MUST use a one-line expression with 'reduce' only. "
-                                          "Only output the expression and nothing else.},
+                                          "Only output the expression and nothing else."},
             {"role": "user", "content": last_msg}
         ]
         expr = get_chatbot_response(system_prompt)
