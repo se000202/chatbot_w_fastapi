@@ -162,7 +162,10 @@ async def chat_stream_endpoint(req: ChatRequest):
         return {"response": result}
 
     system_prompt_default = [
-        {"role": "system", "content": "You are a helpful assistant. If your output includes math, use $$...$$."},
+        {"role": "system", "content": "You are a helpful assistant. "
+                                      "If your output includes a mathematical formula or expression, surround it with $$...$$ "
+                                      "so that it can be rendered as LaTeX. "
+                                      "If your output is normal text, do not use $$.""},
     ]
 
     return StreamingResponse(
