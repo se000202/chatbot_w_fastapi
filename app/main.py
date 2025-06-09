@@ -67,9 +67,17 @@ def compute_expression(expr: str) -> str:
 
 # Improved auto_wrap_latex
 def auto_wrap_latex(response: str) -> str:
+    # 이미 $$가 있으면 그대로 둔다
     if "$$" in response:
         return response
 
+    # \[ ... \] → $$ ... $$ 변환
+    response = re.sub(r'\\\[(.*?)\\\]', r'$$\1$$', response, flags=re.DOTALL)
+
+    # \begin{align*}...\end{align*} → $$ ... $$ 변환
+    response = re.sub(r'\\begin{align\*}(.*?)\\end{align\*}', r'$$\1$$', response, flags=re.DOTALL)
+
+    # 너무 긴 문장은 감싸지 않음 (설명일 가능성 높음)
     if len(response.strip()) > 100:
         return response
 
