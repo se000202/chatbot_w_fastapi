@@ -29,10 +29,11 @@ def gpt_stream(messages):
         stream=True
     )
     for chunk in response:
-        if 'choices' in chunk and len(chunk.choices) > 0:
-            delta = chunk.choices[0].delta
-            if 'content' in delta:
-                yield delta.content
+        delta = chunk.choices[0].delta
+        content = getattr(delta, "content", None)
+        if content:
+            yield content
+
 
 # Safe eval 계산
 forbidden_keywords = ["import", "def", "exec", "eval", "os.", "__"]
