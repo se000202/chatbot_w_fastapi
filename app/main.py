@@ -71,21 +71,29 @@ def auto_wrap_latex(response: str) -> str:
     if "$$" in response:
         return response
 
+    # LaTeX environments to capture and convert
+    environments = [
+        "align\\*", "align", "equation", "gather", "multline"
+    ]
+
     # \[ ... \] → $$ ... $$ 변환
     response = re.sub(r'\\\[(.*?)\\\]', r'$$\1$$', response, flags=re.DOTALL)
 
-    # \begin{align*}...\end{align*} → $$ ... $$ 변환
-    response = re.sub(r'\\begin{align\*}(.*?)\\end{align\*}', r'$$\1$$', response, flags=re.DOTALL)
+    # \begin{ENV}...\end{ENV} → $$ ... $$ 변환
+    for env in environments:
+        pattern = rf'\\begin{{{env}}}(.*?)\\end{{{env}}}'
+        response = re.sub(pattern, r'$$\1$$', response, flags=re.DOTALL)
 
-    # 너무 긴 문장은 감싸지 않음 (설명일 가능성 높음)
-    if len(response.strip()) > 100:
+    # 너무 긴 문장은 감싸지 않음 (설명 가능성 높음)
+    if len(response.strip()) > 300:
         return response
 
-    formula_keywords = ["=", "+", "-", "*", "/", "^", "\\sqrt", "\\frac", "\\sum", "\\int", "\\log", "\\sin", "\\cos", "\\tan"]
+    # 수식 keyword heuristic (안전망 유지)
+    formula_keywords = ["=", "+", "-", "*", "/", "^", "\\sqrt", "\\frac", "\\sum", "\\int", "\\log", "\\sin", "\\cos", "\\tan", "\\text", "\\displaystyle"]
 
     if any(keyword in response for keyword in formula_keywords):
         if "\n" not in response and all(c.isalnum() or c in " +-*/^=()[]{}\\._" for c in response.strip()):
-            print("[DEBUG] Auto-wrapping response as LaTeX.")
+            print("[DEBUG] Auto-wrapping response as LaTeX (fallback keyword match).")
             return f"$$ {response.strip()} $$"
 
     return response
