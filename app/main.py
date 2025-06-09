@@ -96,6 +96,8 @@ def auto_wrap_latex(response: str) -> str:
 
     return response
 
+# ✅ FastAPI @app.post("/chat") 수정된 endpoint 버전
+
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     messages = req.messages
@@ -124,7 +126,27 @@ async def chat_endpoint(req: ChatRequest):
         result = compute_expression(expr)
         return {"response": result}
 
-    # 일반 chat → Streaming mode 사용 ⭐️
+    # 일반 chat 처리 → stream 파라미터 사용 여부 확인
+    # req 객체에는 stream 파라미터 없음 → 클라이언트에서 messages 외에 stream 여부 명시 필요
+    # 여기서는 임시로 stream 여부를 query param 으로 받는 예시로 작성
+    # 실제 프로덕션에서는 별도의 /chat_stream endpoint 추천
+
+    from fastapi import Request
+    from fastapi.params import Query
+
+    # stream 파라미터 기본 False
+    import inspect
+    frame = inspect.currentframe().f_back
+    request = frame.f_locals.get("request", None)
+
+    stream_mode = False
+    if request is not None:
+        try:
+            stream_param = request.query_params.get("stream", "false")
+            stream_mode = stream_param.lower() == "true"
+        except:
+            pass
+
     system_prompt_default = [
         {"role": "system", "content": "You are a helpful assistant. "
                                       "If your output includes a mathematical formula or expression, surround it with $$...$$ "
@@ -132,8 +154,20 @@ async def chat_endpoint(req: ChatRequest):
                                       "If your output is normal text, do not use $$."},
     ]
 
-    # GPT Streaming → StreamingResponse 리턴
-    return StreamingResponse(
-        gpt_stream(system_prompt_default + messages),
-        media_type="text/plain"
-    )
+    if stream_mode:
+        # Streaming mode 사용
+        return StreamingResponse(
+            gpt_stream(system_prompt_default + messages),
+            media_type="text/plain"
+        )
+    else:
+        # 일반 JSON 응답
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=system_prompt_default + messages
+        )
+        return {"response": response.choices[0].message.content.strip()}
+
+# 🚀 추후 확장 가능: /chat_stream 별도 endpoint 구성 추천!
+
+
