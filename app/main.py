@@ -1,5 +1,5 @@
-# main.py (FastAPI 서버)
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict
 import os
@@ -16,16 +16,15 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 app = FastAPI()
 
-# Request model
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
 
-# GPT chat response
-def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
+# GPT Streaming generator
+def gpt_stream(messages):
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
-        stream=True  # Streaming 활성화
+        stream=True
     )
     for chunk in response:
         if 'choices' in chunk and len(chunk.choices) > 0:
@@ -33,13 +32,13 @@ def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
             if 'content' in delta:
                 yield delta.content
 
-# Expression calculation (safe eval + forbidden keyword check)
+# Safe eval 계산
+forbidden_keywords = ["import", "def", "exec", "eval", "os.", "__"]
+
 def compute_expression(expr: str) -> str:
     try:
-        forbidden_keywords = ["import", "def", "exec", "eval", "os.", "__"]
-        for keyword in forbidden_keywords:
-            if keyword in expr:
-                return f"계산 중 오류 발생: 금지된 표현식 '{keyword}' 이 감지되었습니다. 실행 중단."
+        if any(keyword in expr for keyword in forbidden_keywords):
+            return f"계산 중 오류 발생: 금지된 표현식이 감지되었습니다."
 
         safe_globals = {
             "__builtins__": {},
@@ -59,12 +58,6 @@ def compute_expression(expr: str) -> str:
             "log10": math.log10,
             "exp": math.exp
         }
-
-        print(f"[DEBUG] About to eval expression: {repr(expr)} (type: {type(expr)})")
-
-        if not isinstance(expr, str):
-            raise ValueError("Expression is not a string!")
-
         result = eval(expr, safe_globals)
         return f"계산 결과: {result}"
     except Exception as e:
