@@ -24,9 +24,14 @@ class ChatRequest(BaseModel):
 def get_chatbot_response(messages: List[Dict[str, str]]) -> str:
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=messages
+        messages=messages,
+        stream=True  # Streaming 활성화
     )
-    return response.choices[0].message.content.strip()
+    for chunk in response:
+        if 'choices' in chunk and len(chunk.choices) > 0:
+            delta = chunk.choices[0].delta
+            if 'content' in delta:
+                yield delta.content
 
 # Expression calculation (safe eval + forbidden keyword check)
 def compute_expression(expr: str) -> str:
@@ -108,6 +113,7 @@ async def chat_endpoint(req: ChatRequest):
     calc_keywords = ["합", "곱", "피보나치", "product of primes", "sum of primes", "fibonacci"]
 
     if any(keyword in last_msg for keyword in calc_keywords):
+        # 계산 모드 → 기존 방식 유지 (stream X)
         system_prompt = [
             {"role": "system", "content": "You are an assistant that converts calculation requests into ONE-LINE Python expressions. "
                                           "You must NOT define functions. You must NOT use 'is_prime' or any undefined functions. "
@@ -125,13 +131,16 @@ async def chat_endpoint(req: ChatRequest):
         result = compute_expression(expr)
         return {"response": result}
 
+    # 일반 chat → Streaming mode 사용 ⭐️
     system_prompt_default = [
         {"role": "system", "content": "You are a helpful assistant. "
                                       "If your output includes a mathematical formula or expression, surround it with $$...$$ "
                                       "so that it can be rendered as LaTeX. "
                                       "If your output is normal text, do not use $$."},
     ]
-    answer = get_chatbot_response(system_prompt_default + messages)
-    answer_wrapped = auto_wrap_latex(answer)
 
-    return {"response": answer_wrapped}
+    # GPT Streaming → StreamingResponse 리턴
+    return StreamingResponse(
+        gpt_stream(system_prompt_default + messages),
+        media_type="text/plain"
+    )
