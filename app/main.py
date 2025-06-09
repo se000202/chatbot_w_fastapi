@@ -96,6 +96,14 @@ def auto_wrap_latex(response: str) -> str:
 
     return response
 
+
+def get_chatbot_response(messages):
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages
+    )
+    return response.choices[0].message.content.strip()
+
 # ✅ FastAPI @app.post("/chat") 수정된 endpoint 버전
 
 @app.post("/chat")
