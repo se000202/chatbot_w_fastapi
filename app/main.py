@@ -165,7 +165,7 @@ async def chat_stream_endpoint(req: ChatRequest):
         {"role": "system", "content": "You are a helpful assistant. "
                                       "If your output includes a mathematical formula or expression, surround it with $$...$$ "
                                       "so that it can be rendered as LaTeX. "
-                                      "If your output is normal text, do not use $$.""},
+                                      "If your output is normal text, do not use $$."},
     ]
 
     return StreamingResponse(
