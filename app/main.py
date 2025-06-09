@@ -1,3 +1,5 @@
+# ✅ FastAPI 최종본 — /chat + /chat_stream 분리
+
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -65,28 +67,22 @@ def compute_expression(expr: str) -> str:
 
 # Improved auto_wrap_latex
 def auto_wrap_latex(response: str) -> str:
-    # 이미 $$가 있으면 그대로 둔다
     if "$$" in response:
         return response
 
-    # LaTeX environments to capture and convert
     environments = [
         "align\\*", "align", "equation", "gather", "multline"
     ]
 
-    # \[ ... \] → $$ ... $$ 변환
     response = re.sub(r'\\\[(.*?)\\\]', r'$$\1$$', response, flags=re.DOTALL)
 
-    # \begin{ENV}...\end{ENV} → $$ ... $$ 변환
     for env in environments:
         pattern = rf'\\begin{{{env}}}(.*?)\\end{{{env}}}'
         response = re.sub(pattern, r'$$\1$$', response, flags=re.DOTALL)
 
-    # 너무 긴 문장은 감싸지 않음 (설명 가능성 높음)
     if len(response.strip()) > 300:
         return response
 
-    # 수식 keyword heuristic (안전망 유지)
     formula_keywords = ["=", "+", "-", "*", "/", "^", "\\approx","\\sqrt", "\\frac", "\\sum", "\\int", "\\log", "\\sin", "\\cos", "\\tan", "\\text", "\\displaystyle"]
 
     if any(keyword in response for keyword in formula_keywords):
@@ -96,15 +92,13 @@ def auto_wrap_latex(response: str) -> str:
 
     return response
 
-
+# 추가: get_chatbot_response 함수 정의
 def get_chatbot_response(messages):
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages
     )
     return response.choices[0].message.content.strip()
-
-# ✅ FastAPI @app.post("/chat") 수정된 endpoint 버전
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
@@ -132,10 +126,7 @@ async def chat_endpoint(req: ChatRequest):
         return {"response": result}
 
     system_prompt_default = [
-        {"role": "system", "content": "You are a helpful assistant. "
-                                      "If your output includes a mathematical formula or expression, surround it with $$...$$ "
-                                      "so that it can be rendered as LaTeX. "
-                                      "If your output is normal text, do not use $$."},
+        {"role": "system", "content": "You are a helpful assistant. If your output includes math, use $$...$$."},
     ]
 
     response = client.chat.completions.create(
@@ -143,6 +134,7 @@ async def chat_endpoint(req: ChatRequest):
         messages=system_prompt_default + messages
     )
     return {"response": response.choices[0].message.content.strip()}
+
 @app.post("/chat_stream")
 async def chat_stream_endpoint(req: ChatRequest):
     messages = req.messages
@@ -166,19 +158,13 @@ async def chat_stream_endpoint(req: ChatRequest):
         ]
         expr = get_chatbot_response(system_prompt)
         result = compute_expression(expr)
-        # 계산은 JSON 반환 고정 → StreamingResponse 사용 안함
         return {"response": result}
 
     system_prompt_default = [
-        {"role": "system", "content": "You are a helpful assistant. "
-                                      "If your output includes a mathematical formula or expression, surround it with $$...$$ "
-                                      "so that it can be rendered as LaTeX. "
-                                      "If your output is normal text, do not use $$."},
+        {"role": "system", "content": "You are a helpful assistant. If your output includes math, use $$...$$."},
     ]
 
     return StreamingResponse(
         gpt_stream(system_prompt_default + messages),
         media_type="text/plain"
     )
-
-
