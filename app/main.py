@@ -108,7 +108,6 @@ async def chat_endpoint(req: ChatRequest):
     calc_keywords = ["합", "곱", "피보나치", "product of primes", "sum of primes", "fibonacci"]
 
     if any(keyword in last_msg for keyword in calc_keywords):
-        # 계산 모드 → 기존 방식 유지 (stream X)
         system_prompt = [
             {"role": "system", "content": "You are an assistant that converts calculation requests into ONE-LINE Python expressions. "
                                           "You must NOT define functions. You must NOT use 'is_prime' or any undefined functions. "
@@ -121,31 +120,8 @@ async def chat_endpoint(req: ChatRequest):
             {"role": "user", "content": last_msg}
         ]
         expr = get_chatbot_response(system_prompt)
-        print(f"[DEBUG] Generated expression: {repr(expr)}")
-
         result = compute_expression(expr)
         return {"response": result}
-
-    # 일반 chat 처리 → stream 파라미터 사용 여부 확인
-    # req 객체에는 stream 파라미터 없음 → 클라이언트에서 messages 외에 stream 여부 명시 필요
-    # 여기서는 임시로 stream 여부를 query param 으로 받는 예시로 작성
-    # 실제 프로덕션에서는 별도의 /chat_stream endpoint 추천
-
-    from fastapi import Request
-    from fastapi.params import Query
-
-    # stream 파라미터 기본 False
-    import inspect
-    frame = inspect.currentframe().f_back
-    request = frame.f_locals.get("request", None)
-
-    stream_mode = False
-    if request is not None:
-        try:
-            stream_param = request.query_params.get("stream", "false")
-            stream_mode = stream_param.lower() == "true"
-        except:
-            pass
 
     system_prompt_default = [
         {"role": "system", "content": "You are a helpful assistant. "
@@ -154,20 +130,44 @@ async def chat_endpoint(req: ChatRequest):
                                       "If your output is normal text, do not use $$."},
     ]
 
-    if stream_mode:
-        # Streaming mode 사용
-        return StreamingResponse(
-            gpt_stream(system_prompt_default + messages),
-            media_type="text/plain"
-        )
-    else:
-        # 일반 JSON 응답
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=system_prompt_default + messages
-        )
-        return {"response": response.choices[0].message.content.strip()}
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=system_prompt_default + messages
+    )
+    return {"response": response.choices[0].message.content.strip()}
+@app.post("/chat_stream")
+async def chat_stream_endpoint(req: ChatRequest):
+    messages = req.messages
 
-# 🚀 추후 확장 가능: /chat_stream 별도 endpoint 구성 추천!
+    user_msgs = [m["content"] for m in messages if m["role"] == "user"]
+    last_msg = user_msgs[-1] if user_msgs else ""
+
+    calc_keywords = ["합", "곱", "피보나치", "product of primes", "sum of primes", "fibonacci"]
+
+    if any(keyword in last_msg for keyword in calc_keywords):
+        system_prompt = [
+            {"role": "system", "content": "You are an assistant that converts calculation requests into ONE-LINE Python expressions. "
+                                          "You must NOT define functions. You must NOT use 'is_prime' or any undefined functions. "
+                                          "You must NOT use import statements. You must NOT use eval or exec or os. "
+                                          "You must use list comprehension with 'all(x % d != 0 ...)' inline to detect primes. "
+                                          "If the user asks for sum of primes, output 'sum([...])'. "
+                                          "If the user asks for product of primes, output 'prod([...])'. "
+                                          "If the user asks for the nth Fibonacci number, you MUST use a one-line expression with 'reduce' only. "
+                                          "Only output the expression and nothing else.},
+            {"role": "user", "content": last_msg}
+        ]
+        expr = get_chatbot_response(system_prompt)
+        result = compute_expression(expr)
+        # 계산은 JSON 반환 고정 → StreamingResponse 사용 안함
+        return {"response": result}
+
+    system_prompt_default = [
+        {"role": "system", "content": "You are a helpful assistant. If your output includes math, use $$...$$."},
+    ]
+
+    return StreamingResponse(
+        gpt_stream(system_prompt_default + messages),
+        media_type="text/plain"
+    )
 
 
