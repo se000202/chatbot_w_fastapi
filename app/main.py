@@ -130,7 +130,8 @@ async def chat_endpoint(req: ChatRequest):
         {"role": "system", "content": "You are a helpful assistant. "
                                       "If your output includes a mathematical formula or expression, always surround it with $$...$$."
                                       "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math."
-                                      "If your output is normal text, do not use $$."},
+                                      "If your output is normal text, do not use $$."
+                                      "If your output includes multiple paragraphs or lists, use double line breaks (\\n\\n) or HTML <br> tags for line breaks."},
     ]
 
     response = client.chat.completions.create(
@@ -168,7 +169,8 @@ async def chat_stream_endpoint(req: ChatRequest):
         {"role": "system", "content": "You are a helpful assistant. "
                                       "If your output includes a mathematical formula or expression, always surround it with $$...$$."
                                       "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math."
-                                      "If your output is normal text, do not use $$."},
+                                      "If your output is normal text, do not use $$.
+                                      "If your output includes multiple paragraphs or lists, use double line breaks (\\n\\n) or HTML <br> tags for line breaks."},
     ]
 
     return StreamingResponse(
