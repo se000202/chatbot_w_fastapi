@@ -35,9 +35,12 @@ def process_line_with_latex_safe(content):
         else:
             # 일반 텍스트 → \n → \n\n 변환
             part = part.replace('\n', '\n\n')
+            # 중복 줄바꿈은 최소화
+            part = re.sub(r'\n\n\n+', '\n\n', part)
             result_parts.append(part)
 
     return ''.join(result_parts)
+
 
 
 # GPT Streaming generator
