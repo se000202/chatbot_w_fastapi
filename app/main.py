@@ -32,6 +32,7 @@ def gpt_stream(messages):
         delta = chunk.choices[0].delta
         content = getattr(delta, "content", None)
         if content:
+            content = content.replace('\n', '<br>')
             yield content
 
 
