@@ -128,8 +128,8 @@ async def chat_endpoint(req: ChatRequest):
 
     system_prompt_default = [
         {"role": "system", "content": "You are a helpful assistant. "
-                                      "If your output includes a mathematical formula or expression, surround it with $$...$$ "
-                                      "so that it can be rendered as LaTeX. "
+                                      "If your output includes a mathematical formula or expression, always surround it with $$...$$."
+                                      "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math.""
                                       "If your output is normal text, do not use $$."},
     ]
 
