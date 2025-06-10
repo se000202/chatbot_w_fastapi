@@ -154,7 +154,7 @@ async def chat_endpoint(req: ChatRequest):
                                       "If your output includes a mathematical formula or expression, always surround it with $$...$$."
                                       "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math."
                                       "If your output is normal text, do not use $$."
-                                      "If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks."},
+                                      Always use double line breaks (\\n\\n) between paragraphs, lists, and after formulas for readability."},
     ]
 
     response = client.chat.completions.create(
@@ -193,7 +193,7 @@ async def chat_stream_endpoint(req: ChatRequest):
                                       "If your output includes a mathematical formula or expression, always surround it with $$...$$."
                                       "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math."
                                       "If your output is normal text, do not use $$."
-                                      "If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks."},
+                                      Always use double line breaks (\\n\\n) between paragraphs, lists, and after formulas for readability."},
     ]
 
     return StreamingResponse(
