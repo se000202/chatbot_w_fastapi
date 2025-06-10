@@ -21,6 +21,25 @@ app = FastAPI()
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
 
+def process_line_with_latex_safe(content):
+    # LaTeX 수식 패턴: $$ ... $$
+    pattern = re.compile(r'(\$\$.*?\$\$)', re.DOTALL)
+
+    parts = pattern.split(content)
+
+    result_parts = []
+    for part in parts:
+        if part.startswith('$$') and part.endswith('$$'):
+            # LaTeX 수식 부분 → 그대로 둠
+            result_parts.append(part)
+        else:
+            # 일반 텍스트 → \n → \n\n 변환
+            part = part.replace('\n', '\n\n')
+            result_parts.append(part)
+
+    return ''.join(result_parts)
+
+
 # GPT Streaming generator
 def gpt_stream(messages):
     response = client.chat.completions.create(
@@ -32,7 +51,7 @@ def gpt_stream(messages):
         delta = chunk.choices[0].delta
         content = getattr(delta, "content", None)
         if content:
-            yield content
+            yield process_line_with_latex_safe(content)
 
 
 
