@@ -129,7 +129,7 @@ async def chat_endpoint(req: ChatRequest):
     system_prompt_default = [
         {"role": "system", "content": "You are a helpful assistant. "
                                       "If your output includes a mathematical formula or expression, always surround it with $$...$$."
-                                      "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math.""
+                                      "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math."
                                       "If your output is normal text, do not use $$."},
     ]
 
@@ -165,7 +165,10 @@ async def chat_stream_endpoint(req: ChatRequest):
         return {"response": result}
 
     system_prompt_default = [
-        {"role": "system", "content": "You are a helpful assistant. If your output includes math, use $$...$$."},
+        {"role": "system", "content": "You are a helpful assistant. "
+                                      "If your output includes a mathematical formula or expression, always surround it with $$...$$."
+                                      "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math."
+                                      "If your output is normal text, do not use $$."},
     ]
 
     return StreamingResponse(
