@@ -1,4 +1,4 @@
-# ✅ FastAPI 최종본 — /chat + /chat_stream 분리
+# ✅ FastAPI 최종본 — /chat + /chat_stream 분리 + 안전한 LaTeX 후처리 추가
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
@@ -21,29 +21,41 @@ app = FastAPI()
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
 
-def process_line_with_latex_safe(content):
-    # LaTeX 수식 패턴: $$ ... $$
-    pattern = re.compile(r'(\$\$.*?\$\$)', re.DOTALL)
+# ---- LaTeX 후처리 함수들 ----
 
-    parts = pattern.split(content)
+# 1️⃣ inline LaTeX 감싸기 (naked로 나오는 경우)
+def auto_wrap_inline_latex(response: str) -> str:
+    inline_latex_pattern = re.compile(r'(\\(?:frac|sqrt|sum|int|log|sin|cos|tan)[^$ \n]*)')
 
-    result_parts = []
-    for part in parts:
-        if part.startswith('$$') and part.endswith('$$'):
-            # LaTeX 수식 부분 → 그대로 둠
-            result_parts.append(part)
+    def replacer(match):
+        return f'$$ {match.group(1)} $$'
+
+    response = inline_latex_pattern.sub(replacer, response)
+    return response
+
+# 2️⃣ list item 내에 LaTeX 있으면 전체 $$...$$ 감싸기
+def auto_wrap_list_latex(response: str) -> str:
+    lines = response.split('\n')
+    new_lines = []
+    for line in lines:
+        if re.match(r'^\s*[-*]\s', line) and re.search(r'\\(frac|sqrt|sum|int|log|sin|cos|tan)', line):
+            content = line.strip()
+            content_no_bullet = re.sub(r'^[-*]\s+', '', content)
+            new_lines.append(f'- $$ {content_no_bullet} $$')
         else:
-            # 일반 텍스트 → \n → \n\n 변환
-            part = part.replace('\n', '\n\n')
-            # 중복 줄바꿈은 최소화
-            part = re.sub(r'\n\n\n+', '\n\n', part)
-            result_parts.append(part)
+            new_lines.append(line)
+    return '\n'.join(new_lines)
 
-    return ''.join(result_parts)
+# ---- GPT 호출 관련 ----
 
+def get_chatbot_response(messages):
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages
+    )
+    return response.choices[0].message.content.strip()
 
-
-# GPT Streaming generator
+# Streaming generator
 def gpt_stream(messages):
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -54,11 +66,10 @@ def gpt_stream(messages):
         delta = chunk.choices[0].delta
         content = getattr(delta, "content", None)
         if content:
-            yield process_line_with_latex_safe(content)
+            yield content
 
+# ---- 계산 관련 ----
 
-
-# Safe eval 계산
 forbidden_keywords = ["import", "def", "exec", "eval", "os.", "__"]
 
 def compute_expression(expr: str) -> str:
@@ -89,40 +100,7 @@ def compute_expression(expr: str) -> str:
     except Exception as e:
         return f"계산 중 오류 발생: {e}"
 
-# Improved auto_wrap_latex
-def auto_wrap_latex(response: str) -> str:
-    if "$$" in response:
-        return response
-
-    environments = [
-        "align\\*", "align", "equation", "gather", "multline"
-    ]
-
-    response = re.sub(r'\\\[(.*?)\\\]', r'$$\1$$', response, flags=re.DOTALL)
-
-    for env in environments:
-        pattern = rf'\\begin{{{env}}}(.*?)\\end{{{env}}}'
-        response = re.sub(pattern, r'$$\1$$', response, flags=re.DOTALL)
-
-    if len(response.strip()) > 300:
-        return response
-
-    formula_keywords = ["=", "+", "-", "*", "/", "^", "\\cdot", "\\approx","\\sqrt", "\\frac", "\\sum", "\\int", "\\log", "\\sin", "\\cos", "\\tan", "\\text", "\\displaystyle"]
-
-    if any(keyword in response for keyword in formula_keywords):
-        if "\n" not in response and all(c.isalnum() or c in " +-*/^=()[]{}\\._" for c in response.strip()):
-            print("[DEBUG] Auto-wrapping response as LaTeX (fallback keyword match).")
-            return f"$$ {response.strip()} $$"
-
-    return response
-
-# 추가: get_chatbot_response 함수 정의
-def get_chatbot_response(messages):
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages
-    )
-    return response.choices[0].message.content.strip()
+# ---- /chat endpoint ----
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
@@ -149,19 +127,25 @@ async def chat_endpoint(req: ChatRequest):
         result = compute_expression(expr)
         return {"response": result}
 
+    # Default prompt (강화됨)
     system_prompt_default = [
         {"role": "system", "content": "You are a helpful assistant. "
                                       "If your output includes a mathematical formula or expression, always surround it with $$...$$."
                                       "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math."
+                                      "If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$."
                                       "If your output is normal text, do not use $$."
-                                      "Always use double line breaks (\\n\\n) between paragraphs, lists, and after formulas for readability."},
+                                      "If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks."},
     ]
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=system_prompt_default + messages
-    )
-    return {"response": response.choices[0].message.content.strip()}
+    answer = get_chatbot_response(system_prompt_default + messages)
+
+    # 후처리 적용
+    answer = auto_wrap_inline_latex(answer)
+    answer = auto_wrap_list_latex(answer)
+
+    return {"response": answer}
+
+# ---- /chat_stream endpoint ----
 
 @app.post("/chat_stream")
 async def chat_stream_endpoint(req: ChatRequest):
@@ -188,12 +172,14 @@ async def chat_stream_endpoint(req: ChatRequest):
         result = compute_expression(expr)
         return {"response": result}
 
+    # Default prompt (강화됨)
     system_prompt_default = [
         {"role": "system", "content": "You are a helpful assistant. "
                                       "If your output includes a mathematical formula or expression, always surround it with $$...$$."
                                       "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math."
+                                      "If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$."
                                       "If your output is normal text, do not use $$."
-                                      "Always use double line breaks (\\n\\n) between paragraphs, lists, and after formulas for readability."},
+                                      "If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks."},
     ]
 
     return StreamingResponse(
