@@ -66,6 +66,8 @@ def gpt_stream(messages):
         delta = chunk.choices[0].delta
         content = getattr(delta, "content", None)
         if content:
+            content = auto_wrap_inline_latex(content)
+            content = auto_wrap_list_latex(content)
             yield content
 
 # ---- 계산 관련 ----
