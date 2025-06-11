@@ -107,7 +107,7 @@ def auto_wrap_latex(response: str) -> str:
     if len(response.strip()) > 300:
         return response
 
-    formula_keywords = ["=", "+", "-", "*", "/", "^", "\\approx","\\sqrt", "\\frac", "\\sum", "\\int", "\\log", "\\sin", "\\cos", "\\tan", "\\text", "\\displaystyle"]
+    formula_keywords = ["=", "+", "-", "*", "/", "^", "\\cdot", "\\approx","\\sqrt", "\\frac", "\\sum", "\\int", "\\log", "\\sin", "\\cos", "\\tan", "\\text", "\\displaystyle"]
 
     if any(keyword in response for keyword in formula_keywords):
         if "\n" not in response and all(c.isalnum() or c in " +-*/^=()[]{}\\._" for c in response.strip()):
