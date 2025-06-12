@@ -20,7 +20,7 @@ class ChatRequest(BaseModel):
 
 # ---- LaTeX 후처리 ----
 def auto_wrap_inline_latex(response: str) -> str:
-    inline_latex_pattern = re.compile(r'(\\(?:frac|sqrt|sum|int|log|sin|cos|tan)[^$ \n]*)')
+    inline_latex_pattern = re.compile(r'(\\(?:text|frac|sqrt|sum|int|log|sin|cos|tan)[^$ \n]*)')
 
     def replacer(match):
         return f'$$ {match.group(1)} $$'
