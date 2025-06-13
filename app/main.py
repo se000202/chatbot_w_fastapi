@@ -38,19 +38,41 @@ def extract_numbers(text: str) -> List[float]:
 
 # 안전한 exec 처리 (함수 정의 후 별도 호출)
 def safe_exec_function(code: str) -> str:
-    try:
-        # AST 검사
         tree = ast.parse(code)
+        
+        # Define dangerous nodes to check for
+        dangerous_nodes = {
+            ast.Call: ['eval', 'exec', 'open', 'system', 'popen', 'spawn'],
+            ast.Import: ['os', 'sys', 'subprocess'],
+            ast.ImportFrom: ['os', 'sys', 'subprocess'],
+            ast.Attribute: ['__import__', 'system', 'popen', 'spawn']
+        }
+        
         for node in ast.walk(tree):
+            # Check for dangerous function calls
+            if isinstance(node, ast.Call):
+                if isinstance(node.func, ast.Name):
+                    if node.func.id in dangerous_nodes[ast.Call]:
+                       raise ValueError("위험합니다.")
+                elif isinstance(node.func, ast.Attribute):
+                    if node.func.attr in dangerous_nodes[ast.Call]:
+                        raise ValueError("위험합니다.")
+            
+            # Check for dangerous imports
             if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.name != "math":
-                        raise ValueError(f"금지된 import 발견: {alias.name}")
+                for name in node.names:
+                    if name.name in dangerous_nodes[ast.Import]:
+                        raise ValueError("위험합니다.")
+            
+            # Check for dangerous from imports
             if isinstance(node, ast.ImportFrom):
-                raise ValueError(f"금지된 ImportFrom 사용 발견.")
+                if node.module in dangerous_nodes[ast.ImportFrom]:
+                    raise ValueError("위험합니다.")
+            
+            # Check for dangerous attributes
             if isinstance(node, ast.Attribute):
-                if node.attr in ['__import__', 'system', 'popen', 'spawn']:
-                    raise ValueError(f"금지된 속성 사용 발견: {node.attr}")
+                if node.attr in dangerous_nodes[ast.Attribute]:
+                    raise ValueError("위험합니다.")
 
         # 안전한 환경 구성
         safe_globals = {
