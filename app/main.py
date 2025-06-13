@@ -50,21 +50,6 @@ def get_chatbot_response(messages):
     )
     return response.choices[0].message.content.strip()
 
-# Streaming generator
-def gpt_stream(messages):
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages,
-        stream=True
-    )
-    for chunk in response:
-        delta = chunk.choices[0].delta
-        content = getattr(delta, "content", None)
-        if content:
-            content = auto_wrap_inline_latex(content)
-            content = auto_wrap_list_latex(content)
-            yield content
-
 # ---- 안전한 exec 처리 ----
 
 def safe_exec_function(code_str: str) -> str:
