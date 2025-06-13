@@ -1,4 +1,4 @@
-# ✅ app.py — Streamlit 최종 개선본 (Only /chat 사용, 안정적 표시)
+# ✅ app.py — Streamlit 최종 개선본 (Send → /chat, Streaming → /chat_stream, 줄바꿈 + 이모지 + code mode 표시)
 
 import streamlit as st
 import requests
@@ -26,24 +26,46 @@ if "user_input_key_num" not in st.session_state:
 if "user_input_key" not in st.session_state:
     st.session_state.user_input_key = f"user_input_{st.session_state.user_input_key_num}"
 
+# last_is_code 초기화
+if "last_is_code" not in st.session_state:
+    st.session_state["last_is_code"] = False
+
 # UI 구성
-st.title("💬 Chatbot with Context (FastAPI + GPT, No Streaming)")
+st.title("💬 Chatbot with Streaming + Context (FastAPI + GPT)")
 
 # reply_box 전역 선언
 reply_box = st.empty()
+
+# code 키워드 설정
+code_keywords = ["python 코드", "파이썬 코드", "python function", "python program"]
 
 # 이전 대화 표시
 for i, msg in enumerate(st.session_state.messages):
     if msg["role"] == "user":
         st.write(f"🧑‍💼 **You:** {msg['content']}")
+
+        # 현재 user message 가 code mode 인지 표시 flag 저장
+        st.session_state["last_is_code"] = any(keyword in msg["content"] for keyword in code_keywords)
+
     elif msg["role"] == "assistant":
         safe_content = msg["content"]
-        st.markdown(f"🤖 **Bot:** {safe_content}", unsafe_allow_html=False)
+
+        # Bot prefix 결정
+        if st.session_state.get("last_is_code", False):
+            bot_prefix = "🤖 **Bot (code mode):**"
+        else:
+            bot_prefix = "🤖 **Bot:**"
+
+        # 출력
+        if i == len(st.session_state.messages) - 1 and st.session_state.get("streaming", False):
+            reply_box.markdown(f"{bot_prefix} {safe_content}", unsafe_allow_html=False)
+        else:
+            st.markdown(f"{bot_prefix} {safe_content}", unsafe_allow_html=False)
 
 # 사용자 입력
 user_input = st.text_area("Your message:", height=100, key=st.session_state.user_input_key)
 
-# Send 버튼 (Only /chat 사용)
+# Send 버튼
 if st.button("Send"):
     user_input_value = st.session_state.get(st.session_state.user_input_key, "").strip()
 
@@ -60,10 +82,11 @@ if st.button("Send"):
             "role": "assistant",
             "content": ""
         })
+        st.session_state.streaming = True
 
         with st.spinner("Assistant is responding..."):
             response = requests.post(
-                API_URL + "/chat",  # ✅ /chat endpoint 호출
+                API_URL + "/chat",  # ✅ /chat endpoint 호출 (stream 제거)
                 json={"messages": st.session_state.messages}
             )
 
@@ -79,10 +102,17 @@ if st.button("Send"):
             else:
                 st.session_state.messages[-1]["content"] = f"❌ Error {response.status_code}: {response.text}"
 
-            # Bot message 표시 (최신 assistant 메시지)
-            reply_box.markdown(f"🤖 **Bot:** {st.session_state.messages[-1]['content']}", unsafe_allow_html=False)
+            # Bot prefix 결정
+            if st.session_state.get("last_is_code", False):
+                bot_prefix = "🤖 **Bot (code mode):**"
+            else:
+                bot_prefix = "🤖 **Bot:**"
 
+            reply_box.markdown(f"{bot_prefix} {st.session_state.messages[-1]['content']}", unsafe_allow_html=False)
+
+        st.session_state.streaming = False
         st.rerun()
+
 
 # Clear Chat 버튼
 if st.button("Clear Chat"):
@@ -91,4 +121,5 @@ if st.button("Clear Chat"):
     ]
     st.session_state.user_input_key_num += 1
     st.session_state.user_input_key = f"user_input_{st.session_state.user_input_key_num}"
+    st.session_state["last_is_code"] = False  # 리셋
     st.rerun()
