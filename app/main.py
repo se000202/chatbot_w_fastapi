@@ -104,9 +104,6 @@ def safe_exec_function(code: str) -> str:
 
         return f"계산 결과: {result}"
 
-    except Exception as e:
-        return f"코드 실행 중 오류 발생: {e}"
-
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     messages = req.messages
