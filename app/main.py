@@ -1,7 +1,6 @@
-# ✅ FastAPI 최종본 — /chat 단일 endpoint + 수학문제 → Python 코드 → safe_exec + 일반 챗봇 처리
+# ✅ FastAPI 최종본 — /chat 단일 endpoint + 함수 기반 safe_exec + args 자동 파싱 + 일반 챗봇 처리
 
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict
 import os
@@ -11,6 +10,7 @@ import ast
 import math
 from math import prod
 from functools import reduce
+import re  # 추가
 
 # Load API key
 load_dotenv()
@@ -29,17 +29,18 @@ def get_chatbot_response(messages):
     )
     return response.choices[0].message.content.strip()
 
-# 안전한 exec 처리
-def safe_exec_function(code: str) -> str:
+# 숫자 자동 파싱 함수
+def extract_numbers(text: str) -> List[float]:
+    # 정수 또는 소수 모두 추출
+    matches = re.findall(r'-?\d+\.?\d*', text)
+    numbers = [float(m) if '.' in m else int(m) for m in matches]
+    return numbers
+
+# 안전한 exec 처리 (함수 정의 후 별도 호출)
+def safe_exec_function(code: str, args: List) -> str:
     try:
         # AST 검사
         tree = ast.parse(code)
-        dangerous_nodes = {
-            ast.Call: ['eval', 'exec', 'open', 'system', 'popen', 'spawn'],
-            ast.Import: ['os', 'sys', 'subprocess'],
-            ast.ImportFrom: ['os', 'sys', 'subprocess'],
-            ast.Attribute: ['__import__', 'system', 'popen', 'spawn']
-        }
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -48,8 +49,9 @@ def safe_exec_function(code: str) -> str:
             if isinstance(node, ast.ImportFrom):
                 raise ValueError(f"금지된 ImportFrom 사용 발견.")
             if isinstance(node, ast.Attribute):
-                if node.attr in dangerous_nodes[ast.Attribute]:
-                    return False
+                if node.attr in ['__import__', 'system', 'popen', 'spawn']:
+                    raise ValueError(f"금지된 속성 사용 발견: {node.attr}")
+
         # 안전한 환경 구성
         safe_globals = {
             "__builtins__": {},
@@ -68,14 +70,18 @@ def safe_exec_function(code: str) -> str:
 
         local_vars = {}
 
-        # 코드 실행
+        # 함수 정의 실행
         exec(code, safe_globals, local_vars)
 
-        # 결과 추출
-        if "result" in local_vars:
-            return f"계산 결과: {local_vars['result']}"
-        else:
-            return "코드 실행 완료 (결과 변수 'result' 없음)"
+        # 함수 호출
+        if "f" not in local_vars:
+            raise ValueError("함수 f 가 정의되어 있지 않습니다!")
+
+        func = local_vars["f"]
+        result = func(*args)
+
+        return f"계산 결과: {result}"
+
     except Exception as e:
         return f"코드 실행 중 오류 발생: {e}"
 
@@ -93,24 +99,34 @@ async def chat_endpoint(req: ChatRequest):
     ]
 
     if any(keyword in last_msg for keyword in calc_keywords):
-        # Case 1: Python 코드 생성
+        # Case 1: Python 함수 정의 요청
         system_prompt_math = [
             {"role": "system", "content": """
             You are a math assistant who writes correct Python code to solve the given math problem.
-            Your goal is to output only the code (no explanations, no markdown).
-            The code should be compatible with exec() and simple.
+
+            Your goal is to output only the function definition (no explanations, no markdown, no variable assignment).
+            The function name MUST be 'f'.
+            The function must take one or more arguments, depending on the problem.
+            Do NOT call the function.
+            Do NOT assign the result to a variable.
             Allowed imports: import math only.
             Do NOT use 'eval', 'exec', 'os', '__', or any unsafe functions.
-            The output MUST be a valid Python code.
-            You MUST assign the final result to a variable named 'result'.
+
+            You MUST NOT assign the result to a variable inside the function.
+
             Example:
-            result = sum([x for x in range(2, 100) if all(x % d != 0 for d in range(2, int(x**0.5)+1))])
+            def f(a, b):
+                return a + b
             """}
         ]
         code = get_chatbot_response(system_prompt_math + messages)
         print(f"[DEBUG] Generated code: {repr(code)}")
 
-        result = safe_exec_function(code)
+        # 🟡 자동으로 유저 입력에서 숫자 파싱
+        args = extract_numbers(last_msg)
+        print(f"[DEBUG] Extracted args: {args}")
+
+        result = safe_exec_function(code, args)
         return {"response": result}
 
     else:
