@@ -1,3 +1,5 @@
+# ✅ FastAPI 최종본 — /chat 단일 endpoint + 수학문제 → Python 코드 → safe_exec + 일반 챗봇 처리
+
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -5,9 +7,10 @@ from typing import List, Dict
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-import math
-import re
 import ast
+import math
+from math import prod
+from functools import reduce
 
 # Load API key
 load_dotenv()
@@ -18,31 +21,7 @@ app = FastAPI()
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
 
-# ---- LaTeX 후처리 함수들 ----
-
-def auto_wrap_inline_latex(response: str) -> str:
-    inline_latex_pattern = re.compile(r'(\\(?:frac|sqrt|sum|int|log|sin|cos|tan)[^$ \n]*)')
-
-    def replacer(match):
-        return f'$$ {match.group(1)} $$'
-
-    response = inline_latex_pattern.sub(replacer, response)
-    return response
-
-def auto_wrap_list_latex(response: str) -> str:
-    lines = response.split('\n')
-    new_lines = []
-    for line in lines:
-        if re.match(r'^\s*[-*]\s', line) and re.search(r'\\(frac|sqrt|sum|int|log|sin|cos|tan)', line):
-            content = line.strip()
-            content_no_bullet = re.sub(r'^[-*]\s+', '', content)
-            new_lines.append(f'- $$ {content_no_bullet} $$')
-        else:
-            new_lines.append(line)
-    return '\n'.join(new_lines)
-
-# ---- GPT 호출 ----
-
+# GPT 호출
 def get_chatbot_response(messages):
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -50,75 +29,50 @@ def get_chatbot_response(messages):
     )
     return response.choices[0].message.content.strip()
 
-# Streaming generator
-def gpt_stream(messages):
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=messages,
-        stream=True
-    )
-    for chunk in response:
-        delta = chunk.choices[0].delta
-        content = getattr(delta, "content", None)
-        if content:
-            content = auto_wrap_inline_latex(content)
-            content = auto_wrap_list_latex(content)
-            yield content
-
-# ---- 안전한 exec 처리 ----
-
-def safe_exec_function(code_str: str) -> str:
+# 안전한 exec 처리
+def safe_exec_function(code: str) -> str:
     try:
-        # AST 파싱
-        tree = ast.parse(code_str)
-
-        # 허용 노드
-        allowed_nodes = (
-            ast.Module, ast.Import, ast.ImportFrom,
-            ast.Assign, ast.Expr, ast.Call, ast.Name,
-            ast.BinOp, ast.UnaryOp, ast.Num, ast.Constant,  # Num <3.8 / Constant >=3.8
-            ast.List, ast.Tuple, ast.Dict, ast.Subscript, ast.Index, ast.Slice,
-            ast.Attribute, ast.Compare, ast.If, ast.IfExp, ast.BoolOp,
-            ast.And, ast.Or, ast.Not, ast.For, ast.While, ast.Break,
-            ast.Continue, ast.Pass, ast.Return
-        )
-
-        # 허용된 Import는 math 만
-        allowed_imports = {"math"}
+        # AST 검사
+        tree = ast.parse(code)
 
         for node in ast.walk(tree):
-            if not isinstance(node, allowed_nodes):
-                raise ValueError(f"금지된 노드 발견: {type(node).__name__}")
-
-            # Import 제한
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.name != "math":
                         raise ValueError(f"금지된 import 발견: {alias.name}")
-            elif isinstance(node, ast.ImportFrom):
-                if node.module != "math":
-                    raise ValueError(f"금지된 import from 발견: {node.module}")
+            if isinstance(node, ast.ImportFrom):
+                raise ValueError(f"금지된 ImportFrom 사용 발견.")
+            if isinstance(node, (ast.Exec, ast.Eval)):
+                raise ValueError(f"금지된 exec 또는 eval 발견.")
 
-        # 안전한 실행 환경
+        # 안전한 환경 구성
         safe_globals = {
             "__builtins__": {},
-            "math": math
+            "math": math,
+            "sum": sum,
+            "range": range,
+            "prod": prod,
+            "round": round,
+            "reduce": reduce,
+            "all": all,
+            "int": int,
+            "float": float,
+            "abs": abs,
+            "pow": pow,
         }
-        safe_locals = {}
 
-        # 실행
-        exec(compile(tree, filename="<safe_exec>", mode="exec"), safe_globals, safe_locals)
+        local_vars = {}
 
-        # 결과 찾기
-        if "_result" in safe_locals:
-            return f"계산 결과: {safe_locals['_result']}"
+        # 코드 실행
+        exec(code, safe_globals, local_vars)
+
+        # 결과 추출
+        if "result" in local_vars:
+            return f"계산 결과: {local_vars['result']}"
         else:
-            return "✅ 코드 실행 완료 (결과는 별도 출력 없음)."
-
+            return "코드 실행 완료 (결과 변수 'result' 없음)"
     except Exception as e:
         return f"코드 실행 중 오류 발생: {e}"
-
-# ---- /chat endpoint ----
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
@@ -126,76 +80,45 @@ async def chat_endpoint(req: ChatRequest):
     user_msgs = [m["content"] for m in messages if m["role"] == "user"]
     last_msg = user_msgs[-1] if user_msgs else ""
 
-    code_keywords = ["python 코드", "파이썬 코드", "python function", "python program"]
-
-    if any(keyword in last_msg for keyword in code_keywords):
-        system_prompt = [
-            {"role": "system", "content": "You are an assistant that writes safe Python code to perform mathematical computations. "
-                                          "The code must use only standard math functions (via 'import math'), and must not use any external modules. "
-                                          "It must be written as executable Python code. "
-                                          "If applicable, assign the final result to a variable named _result so that it can be read after execution. "
-                                          "Do not use file I/O, OS operations, or network operations. Do not use exec, eval, compile, __import__, open, or any OS-related functions. "
-                                          "Only generate pure Python math code."},
-            {"role": "user", "content": last_msg}
-        ]
-        code = get_chatbot_response(system_prompt)
-        result = safe_exec_function(code)
-        return {"response": f"```\n{code}\n```\n\n{result}"}
-
-    # Default prompt (강화됨)
-    system_prompt_default = [
-        {"role": "system", "content": "You are a helpful assistant. "
-                                      "If your output includes a mathematical formula or expression, always surround it with $$...$$. "
-                                      "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math. "
-                                      "If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$. "
-                                      "If your output is normal text, do not use $$."}
+    # Case 1 → 수학/코드 관련 keywords
+    calc_keywords = [
+        "합", "곱", "피보나치", "피보나치 수", "product of primes", "sum of primes",
+        "fibonacci", "소수", "소수의 합", "소수의 곱", "prime",
+        "표준편차", "분산", "평균", "median", "variance", "standard deviation"
     ]
 
-    answer = get_chatbot_response(system_prompt_default + messages)
-    answer = auto_wrap_inline_latex(answer)
-    answer = auto_wrap_list_latex(answer)
-
-    return {"response": answer}
-
-# ---- /chat_stream endpoint ----
-
-@app.post("/chat_stream")
-async def chat_stream_endpoint(req: ChatRequest):
-    messages = req.messages
-    user_msgs = [m["content"] for m in messages if m["role"] == "user"]
-    last_msg = user_msgs[-1] if user_msgs else ""
-
-    code_keywords = ["python 코드", "파이썬 코드", "python function", "python program"]
-
-    if any(keyword in last_msg for keyword in code_keywords):
-        system_prompt = [
-            {"role": "system", "content": "You are an assistant that writes safe Python code to perform mathematical computations. "
-                                          "The code must use only standard math functions (via 'import math'), and must not use any external modules. "
-                                          "It must be written as executable Python code. "
-                                          "If applicable, assign the final result to a variable named _result so that it can be read after execution. "
-                                          "Do not use file I/O, OS operations, or network operations. Do not use exec, eval, compile, __import__, open, or any OS-related functions. "
-                                          "Only generate pure Python math code."},
-            {"role": "user", "content": last_msg}
+    if any(keyword in last_msg for keyword in calc_keywords):
+        # Case 1: Python 코드 생성
+        system_prompt_math = [
+            {"role": "system", "content": """
+            You are a math assistant who writes correct Python code to solve the given math problem.
+            Your goal is to output only the code (no explanations, no markdown).
+            The code should be compatible with exec() and simple.
+            Allowed imports: import math only.
+            Do NOT use 'eval', 'exec', 'os', '__', or any unsafe functions.
+            The output MUST be a valid Python code.
+            You MUST assign the final result to a variable named 'result'.
+            Example:
+            result = sum([x for x in range(2, 100) if all(x % d != 0 for d in range(2, int(x**0.5)+1))])
+            """}
         ]
-        code = get_chatbot_response(system_prompt)
+        code = get_chatbot_response(system_prompt_math + messages)
+        print(f"[DEBUG] Generated code: {repr(code)}")
+
         result = safe_exec_function(code)
-        stream_text = f"```\n{code}\n```\n\n{result}"
+        return {"response": result}
 
-        def stream_gen():
-            yield stream_text
-
-        return StreamingResponse(stream_gen(), media_type="text/plain")
-
-    # Default prompt (강화됨)
-    system_prompt_default = [
-        {"role": "system", "content": "You are a helpful assistant. "
-                                      "If your output includes a mathematical formula or expression, always surround it with $$...$$. "
-                                      "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math. "
-                                      "If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$. "
-                                      "If your output is normal text, do not use $$."}
-    ]
-
-    return StreamingResponse(
-        gpt_stream(system_prompt_default + messages),
-        media_type="text/plain"
-    )
+    else:
+        # Case 2: 일반 챗봇
+        system_prompt_general = [
+            {"role": "system", "content": """
+            You are a helpful assistant. 
+            If your output includes a mathematical formula or expression, always surround it with $$...$$.
+            Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math.
+            If your output is normal text, do not use $$.
+            If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks.
+            You are not a Python code generator unless specifically asked to write Python code.
+            """}
+        ]
+        answer = get_chatbot_response(system_prompt_general + messages)
+        return {"response": answer}
