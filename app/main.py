@@ -34,7 +34,12 @@ def safe_exec_function(code: str) -> str:
     try:
         # AST 검사
         tree = ast.parse(code)
-
+        dangerous_nodes = {
+            ast.Call: ['eval', 'exec', 'open', 'system', 'popen', 'spawn'],
+            ast.Import: ['os', 'sys', 'subprocess'],
+            ast.ImportFrom: ['os', 'sys', 'subprocess'],
+            ast.Attribute: ['__import__', 'system', 'popen', 'spawn']
+        }
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -42,9 +47,9 @@ def safe_exec_function(code: str) -> str:
                         raise ValueError(f"금지된 import 발견: {alias.name}")
             if isinstance(node, ast.ImportFrom):
                 raise ValueError(f"금지된 ImportFrom 사용 발견.")
-            if isinstance(node, (ast.Exec, ast.Eval)):
-                raise ValueError(f"금지된 exec 또는 eval 발견.")
-
+            if isinstance(node, ast.Attribute):
+                if node.attr in dangerous_nodes[ast.Attribute]:
+                    return False
         # 안전한 환경 구성
         safe_globals = {
             "__builtins__": {},
