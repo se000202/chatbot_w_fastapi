@@ -169,49 +169,49 @@ async def chat_endpoint(req: ChatRequest):
 
 # ---- /chat_stream endpoint ----
 
-@app.post("/chat_stream")
-async def chat_stream_endpoint(req: ChatRequest):
-    messages = req.messages
+# @app.post("/chat_stream")
+# async def chat_stream_endpoint(req: ChatRequest):
+#     messages = req.messages
 
-    user_msgs = [m["content"] for m in messages if m["role"] == "user"]
-    last_msg = user_msgs[-1] if user_msgs else ""
+#     user_msgs = [m["content"] for m in messages if m["role"] == "user"]
+#     last_msg = user_msgs[-1] if user_msgs else ""
 
-    calc_keywords = ["합", "곱", "피보나치", "product of primes", "sum of primes", "fibonacci"]
+#     calc_keywords = ["합", "곱", "피보나치", "product of primes", "sum of primes", "fibonacci"]
 
-    if any(keyword in last_msg for keyword in calc_keywords):
-        system_prompt = [
-            {"role": "system", "content": "You are an assistant that converts calculation requests into ONE-LINE Python expressions. "
-                                          "You must NOT define functions. You must NOT use 'is_prime' or any undefined functions. "
-                                          "You must NOT use import statements. You must NOT use eval or exec or os. "
-                                          "You must use list comprehension with 'all(x % d != 0 ...)' inline to detect primes. "
-                                          "If the user asks for sum of primes, output 'sum([...])'. "
-                                          "If the user asks for product of primes, output 'prod([...])'. "
-                                          "If the user asks for the nth Fibonacci number, you MUST use a one-line expression with 'reduce' only. "
-                                          "Only output the expression and nothing else."},
-            {"role": "user", "content": last_msg}
-        ]
-        expr = get_chatbot_response(system_prompt)
-        result = compute_expression(expr)
-        return {"response": result}
+#     if any(keyword in last_msg for keyword in calc_keywords):
+#         system_prompt = [
+#             {"role": "system", "content": "You are an assistant that converts calculation requests into ONE-LINE Python expressions. "
+#                                           "You must NOT define functions. You must NOT use 'is_prime' or any undefined functions. "
+#                                           "You must NOT use import statements. You must NOT use eval or exec or os. "
+#                                           "You must use list comprehension with 'all(x % d != 0 ...)' inline to detect primes. "
+#                                           "If the user asks for sum of primes, output 'sum([...])'. "
+#                                           "If the user asks for product of primes, output 'prod([...])'. "
+#                                           "If the user asks for the nth Fibonacci number, you MUST use a one-line expression with 'reduce' only. "
+#                                           "Only output the expression and nothing else."},
+#             {"role": "user", "content": last_msg}
+#         ]
+#         expr = get_chatbot_response(system_prompt)
+#         result = compute_expression(expr)
+#         return {"response": result}
 
-    # Default prompt (강화됨)
-    system_prompt_default = [
-        {"role": "system", "content": 
-         "You are a helpful assistant.\n\n"
-         "- If your output includes a mathematical formula or expression, you MUST enclose the ENTIRE formula with $$...$$.\n"
-         "- NEVER split formulas across multiple $$ blocks.\n"
-         "- NEVER mix text and math within the same line.\n"
-         "- ALWAYS place entire formulas in one $$ block.\n\n"
-         "✅ Example Correct:\n"
-         "Average = $$ \\frac{2 + 3 + 5 + 7 + 9}{5} = \\frac{26}{5} = 5.2 $$\n\n"
-         "❌ Example Wrong:\n"
-         "Average = $$ \\frac{2 $$ + 3 + 5 + 7 + 9}{5} = $$ \\frac{26}{5} $$ = 5.2\n\n"
-         "- If your output is normal text, do not use $$.\n"
-         "- If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$.\n"
-         "- If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks."}
-    ]
+#     # Default prompt (강화됨)
+#     system_prompt_default = [
+#         {"role": "system", "content": 
+#          "You are a helpful assistant.\n\n"
+#          "- If your output includes a mathematical formula or expression, you MUST enclose the ENTIRE formula with $$...$$.\n"
+#          "- NEVER split formulas across multiple $$ blocks.\n"
+#          "- NEVER mix text and math within the same line.\n"
+#          "- ALWAYS place entire formulas in one $$ block.\n\n"
+#          "✅ Example Correct:\n"
+#          "Average = $$ \\frac{2 + 3 + 5 + 7 + 9}{5} = \\frac{26}{5} = 5.2 $$\n\n"
+#          "❌ Example Wrong:\n"
+#          "Average = $$ \\frac{2 $$ + 3 + 5 + 7 + 9}{5} = $$ \\frac{26}{5} $$ = 5.2\n\n"
+#          "- If your output is normal text, do not use $$.\n"
+#          "- If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$.\n"
+#          "- If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks."}
+#     ]
 
-    return StreamingResponse(
-        gpt_stream(system_prompt_default + messages),
-        media_type="text/plain"
-    )
+#     return StreamingResponse(
+#         gpt_stream(system_prompt_default + messages),
+#         media_type="text/plain"
+#     )
