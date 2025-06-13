@@ -1,4 +1,4 @@
-# ✅ FastAPI 최종본 — /chat + /chat_stream + 안전한 LaTeX 후처리 추가
+# ✅ FastAPI 최종본 — /chat + /chat_stream + safe_exec_function
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
@@ -21,19 +21,14 @@ app = FastAPI()
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
 
-# ---- LaTeX 후처리 함수들 ----
+# ---- LaTeX 후처리 ----
 
-# 1️⃣ inline LaTeX 감싸기
 def auto_wrap_inline_latex(response: str) -> str:
     inline_latex_pattern = re.compile(r'(\\(?:frac|sqrt|sum|int|log|sin|cos|tan)[^$ \n]*)')
-
     def replacer(match):
         return f'$$ {match.group(1)} $$'
+    return inline_latex_pattern.sub(replacer, response)
 
-    response = inline_latex_pattern.sub(replacer, response)
-    return response
-
-# 2️⃣ list item 내에 LaTeX 있으면 전체 $$ 감싸기
 def auto_wrap_list_latex(response: str) -> str:
     lines = response.split('\n')
     new_lines = []
@@ -46,17 +41,7 @@ def auto_wrap_list_latex(response: str) -> str:
             new_lines.append(line)
     return '\n'.join(new_lines)
 
-# 3️⃣ 중첩된 $$ 블록 오류 방지
-def fix_nested_latex_blocks(response: str) -> str:
-    pattern = re.compile(r'\$\$(.*?)\$\$\s*\$\$(.*?)\$\$', re.DOTALL)
-    while True:
-        new_response, count = pattern.subn(r'$$ \1 \2 $$', response)
-        if count == 0:
-            break
-        response = new_response
-    return response
-
-# ---- GPT 호출 관련 ----
+# ---- GPT 호출 ----
 
 def get_chatbot_response(messages):
     response = client.chat.completions.create(
@@ -65,7 +50,6 @@ def get_chatbot_response(messages):
     )
     return response.choices[0].message.content.strip()
 
-# Streaming generator
 def gpt_stream(messages):
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -76,93 +60,82 @@ def gpt_stream(messages):
         delta = chunk.choices[0].delta
         content = getattr(delta, "content", None)
         if content:
-            # 후처리 적용
             content = auto_wrap_inline_latex(content)
             content = auto_wrap_list_latex(content)
-            content = fix_nested_latex_blocks(content)
             yield content
 
-# ---- 계산 관련 ----
+# ---- 안전한 exec 처리 ----
 
-forbidden_keywords = ["import", "def", "exec", "eval", "os.", "__"]
+def safe_exec_function(code_str: str) -> str:
+    forbidden_patterns = ["import os", "import sys", "open(", "eval(", "exec(", "__", "import subprocess", "import shutil"]
+    if any(pattern in code_str for pattern in forbidden_patterns):
+        return "🚫 금지된 코드가 감지되었습니다. 실행이 중단됩니다."
 
-def compute_expression(expr: str) -> str:
     try:
-        if any(keyword in expr for keyword in forbidden_keywords):
-            return f"계산 중 오류 발생: 금지된 표현식이 감지되었습니다."
-
         safe_globals = {
             "__builtins__": {},
+            "math": math,
             "sum": sum,
             "range": range,
             "prod": prod,
-            "round": round,
             "reduce": reduce,
             "all": all,
             "int": int,
             "float": float,
             "abs": abs,
             "pow": pow,
-            "math": math,
             "sqrt": math.sqrt,
             "log": math.log,
             "log10": math.log10,
-            "exp": math.exp
+            "exp": math.exp,
+            "print": print
         }
-        result = eval(expr, safe_globals)
-        return f"계산 결과: {result}"
+        safe_locals = {}
+
+        exec(code_str, safe_globals, safe_locals)
+
+        if "result" in safe_locals:
+            return f"실행 결과: {safe_locals['result']}"
+        else:
+            return "✅ 코드 실행 완료 (result 변수는 정의되지 않음)."
+
     except Exception as e:
-        return f"계산 중 오류 발생: {e}"
+        return f"🚫 코드 실행 중 오류 발생: {e}"
 
 # ---- /chat endpoint ----
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     messages = req.messages
-
     user_msgs = [m["content"] for m in messages if m["role"] == "user"]
     last_msg = user_msgs[-1] if user_msgs else ""
-
-    calc_keywords = ["합", "곱", "피보나치", "product of primes", "sum of primes", "fibonacci"]
-
+    calc_keywords = ["합", "곱", "피보나치", "product of primes", "sum of primes", "fibonacci", "표준편차", "분산", "평균"]
     if any(keyword in last_msg for keyword in calc_keywords):
         system_prompt = [
-            {"role": "system", "content": "You are an assistant that converts calculation requests into ONE-LINE Python expressions. "
-                                          "You must NOT define functions. You must NOT use 'is_prime' or any undefined functions. "
-                                          "You must NOT use import statements. You must NOT use eval or exec or os. "
-                                          "You must use list comprehension with 'all(x % d != 0 ...)' inline to detect primes. "
-                                          "If the user asks for sum of primes, output 'sum([...])'. "
-                                          "If the user asks for product of primes, output 'prod([...])'. "
-                                          "If the user asks for the nth Fibonacci number, you MUST use a one-line expression with 'reduce' only. "
-                                          "Only output the expression and nothing else."},
+            {"role": "system", "content": 
+             "You are an assistant that writes Python code to solve the user's math problem. "
+             "Your output MUST be a complete Python code block, no explanation. "
+             "Always assign your final answer to a variable named 'result'. "
+             "You may define functions if necessary. "
+             "Do NOT use eval, exec, os, subprocess, shutil, or any dangerous functions. "
+             "Only use standard math and built-in safe operations."},
             {"role": "user", "content": last_msg}
         ]
-        expr = get_chatbot_response(system_prompt)
-        result = compute_expression(expr)
+        code_str = get_chatbot_response(system_prompt)
+        print(f"[DEBUG] Generated code:\n{code_str}")
+        result = safe_exec_function(code_str)
         return {"response": result}
-
     # Default prompt (강화됨)
     system_prompt_default = [
         {"role": "system", "content": 
-         "You are a helpful assistant.\n\n"
-         "- If your output includes a mathematical formula or expression, you MUST enclose the ENTIRE formula with $$...$$.\n"
-         "- NEVER split formulas across multiple $$ blocks.\n"
-         "- NEVER mix text and math within the same line.\n"
-         "- ALWAYS place entire formulas in one $$ block.\n\n"
-         "✅ Example Correct:\n"
-         "Average = $$ \\frac{2 + 3 + 5 + 7 + 9}{5} = \\frac{26}{5} = 5.2 $$\n\n"
-         "❌ Example Wrong:\n"
-         "Average = $$ \\frac{2 $$ + 3 + 5 + 7 + 9}{5} = $$ \\frac{26}{5} $$ = 5.2\n\n"
-         "- If your output is normal text, do not use $$.\n"
-         "- If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$.\n"
-         "- If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks."}
+         "You are a helpful assistant. "
+         "If your output includes a mathematical formula or expression, always surround it with $$...$$."
+         "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math."
+         "If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$."
+         "If your output is normal text, do not use $$."
+         "If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks."},
     ]
-
     answer = get_chatbot_response(system_prompt_default + messages)
-
-    # 후처리 적용
     answer = auto_wrap_inline_latex(answer)
     answer = auto_wrap_list_latex(answer)
-    answer = fix_nested_latex_blocks(answer)
-
     return {"response": answer}
