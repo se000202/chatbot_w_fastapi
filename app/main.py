@@ -78,7 +78,7 @@ def safe_exec_function(code: str, args: List) -> str:
             raise ValueError("함수 f 가 정의되어 있지 않습니다!")
 
         func = local_vars["f"]
-        result = func(*args)
+        result = func()
 
         return f"계산 결과: {result}"
 
@@ -106,7 +106,7 @@ async def chat_endpoint(req: ChatRequest):
 
             Your goal is to output only the function definition (no explanations, no markdown, no variable assignment).
             The function name MUST be 'f'.
-            The function must take one or more arguments, depending on the problem.
+            The function must take zero arguments.
             Do NOT call the function.
             Do NOT assign the result to a variable.
             Allowed imports: import math only.
@@ -122,11 +122,7 @@ async def chat_endpoint(req: ChatRequest):
         code = get_chatbot_response(system_prompt_math + messages)
         print(f"[DEBUG] Generated code: {repr(code)}")
 
-        # 🟡 자동으로 유저 입력에서 숫자 파싱
-        args = extract_numbers(last_msg)
-        print(f"[DEBUG] Extracted args: {args}")
-
-        result = safe_exec_function(code, args)
+        result = safe_exec_function(code)
         return {"response": result}
 
     else:
