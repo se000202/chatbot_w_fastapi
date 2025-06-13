@@ -1,5 +1,3 @@
-# ✅ FastAPI 최종본 — /chat + /chat_stream + safe_exec_function
-
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -7,10 +5,9 @@ from typing import List, Dict
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-from math import prod
-from functools import reduce
 import math
 import re
+import ast
 
 # Load API key
 load_dotenv()
@@ -21,13 +18,16 @@ app = FastAPI()
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
 
-# ---- LaTeX 후처리 ----
+# ---- LaTeX 후처리 함수들 ----
 
 def auto_wrap_inline_latex(response: str) -> str:
     inline_latex_pattern = re.compile(r'(\\(?:frac|sqrt|sum|int|log|sin|cos|tan)[^$ \n]*)')
+
     def replacer(match):
         return f'$$ {match.group(1)} $$'
-    return inline_latex_pattern.sub(replacer, response)
+
+    response = inline_latex_pattern.sub(replacer, response)
+    return response
 
 def auto_wrap_list_latex(response: str) -> str:
     lines = response.split('\n')
@@ -50,6 +50,7 @@ def get_chatbot_response(messages):
     )
     return response.choices[0].message.content.strip()
 
+# Streaming generator
 def gpt_stream(messages):
     response = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -67,40 +68,55 @@ def gpt_stream(messages):
 # ---- 안전한 exec 처리 ----
 
 def safe_exec_function(code_str: str) -> str:
-    forbidden_patterns = ["import os", "import sys", "open(", "eval(", "exec(", "__", "import subprocess", "import shutil"]
-    if any(pattern in code_str for pattern in forbidden_patterns):
-        return "🚫 금지된 코드가 감지되었습니다. 실행이 중단됩니다."
-
     try:
+        # AST 파싱
+        tree = ast.parse(code_str)
+
+        # 허용 노드
+        allowed_nodes = (
+            ast.Module, ast.Import, ast.ImportFrom,
+            ast.Assign, ast.Expr, ast.Call, ast.Name,
+            ast.BinOp, ast.UnaryOp, ast.Num, ast.Constant,  # Num <3.8 / Constant >=3.8
+            ast.List, ast.Tuple, ast.Dict, ast.Subscript, ast.Index, ast.Slice,
+            ast.Attribute, ast.Compare, ast.If, ast.IfExp, ast.BoolOp,
+            ast.And, ast.Or, ast.Not, ast.For, ast.While, ast.Break,
+            ast.Continue, ast.Pass, ast.Return
+        )
+
+        # 허용된 Import는 math 만
+        allowed_imports = {"math"}
+
+        for node in ast.walk(tree):
+            if not isinstance(node, allowed_nodes):
+                raise ValueError(f"금지된 노드 발견: {type(node).__name__}")
+
+            # Import 제한
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name != "math":
+                        raise ValueError(f"금지된 import 발견: {alias.name}")
+            elif isinstance(node, ast.ImportFrom):
+                if node.module != "math":
+                    raise ValueError(f"금지된 import from 발견: {node.module}")
+
+        # 안전한 실행 환경
         safe_globals = {
             "__builtins__": {},
-            "math": math,
-            "sum": sum,
-            "range": range,
-            "prod": prod,
-            "reduce": reduce,
-            "all": all,
-            "int": int,
-            "float": float,
-            "abs": abs,
-            "pow": pow,
-            "sqrt": math.sqrt,
-            "log": math.log,
-            "log10": math.log10,
-            "exp": math.exp,
-            "print": print
+            "math": math
         }
         safe_locals = {}
 
-        exec(code_str, safe_globals, safe_locals)
+        # 실행
+        exec(compile(tree, filename="<safe_exec>", mode="exec"), safe_globals, safe_locals)
 
-        if "result" in safe_locals:
-            return f"실행 결과: {safe_locals['result']}"
+        # 결과 찾기
+        if "_result" in safe_locals:
+            return f"계산 결과: {safe_locals['_result']}"
         else:
-            return "✅ 코드 실행 완료 (result 변수는 정의되지 않음)."
+            return "✅ 코드 실행 완료 (결과는 별도 출력 없음)."
 
     except Exception as e:
-        return f"🚫 코드 실행 중 오류 발생: {e}"
+        return f"코드 실행 중 오류 발생: {e}"
 
 # ---- /chat endpoint ----
 
@@ -109,33 +125,34 @@ async def chat_endpoint(req: ChatRequest):
     messages = req.messages
     user_msgs = [m["content"] for m in messages if m["role"] == "user"]
     last_msg = user_msgs[-1] if user_msgs else ""
-    calc_keywords = ["합", "곱", "피보나치", "product of primes", "sum of primes", "fibonacci", "표준편차", "분산", "평균"]
-    if any(keyword in last_msg for keyword in calc_keywords):
+
+    code_keywords = ["python 코드", "파이썬 코드", "python function", "python program"]
+
+    if any(keyword in last_msg for keyword in code_keywords):
         system_prompt = [
-            {"role": "system", "content": 
-             "You are an assistant that writes Python code to solve the user's math problem. "
-             "Your output MUST be a complete Python code block, no explanation. "
-             "Always assign your final answer to a variable named 'result'. "
-             "You may define functions if necessary. "
-             "Do NOT use eval, exec, os, subprocess, shutil, or any dangerous functions. "
-             "Only use standard math and built-in safe operations."},
+            {"role": "system", "content": "You are an assistant that writes safe Python code to perform mathematical computations. "
+                                          "The code must use only standard math functions (via 'import math'), and must not use any external modules. "
+                                          "It must be written as executable Python code. "
+                                          "If applicable, assign the final result to a variable named _result so that it can be read after execution. "
+                                          "Do not use file I/O, OS operations, or network operations. Do not use exec, eval, compile, __import__, open, or any OS-related functions. "
+                                          "Only generate pure Python math code."},
             {"role": "user", "content": last_msg}
         ]
-        code_str = get_chatbot_response(system_prompt)
-        print(f"[DEBUG] Generated code:\n{code_str}")
-        result = safe_exec_function(code_str)
-        return {"response": result}
+        code = get_chatbot_response(system_prompt)
+        result = safe_exec_function(code)
+        return {"response": f"```\n{code}\n```\n\n{result}"}
+
     # Default prompt (강화됨)
     system_prompt_default = [
-        {"role": "system", "content": 
-         "You are a helpful assistant. "
-         "If your output includes a mathematical formula or expression, always surround it with $$...$$."
-         "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math."
-         "If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$."
-         "If your output is normal text, do not use $$."
-         "If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks."},
+        {"role": "system", "content": "You are a helpful assistant. "
+                                      "If your output includes a mathematical formula or expression, always surround it with $$...$$. "
+                                      "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math. "
+                                      "If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$. "
+                                      "If your output is normal text, do not use $$."}
     ]
+
     answer = get_chatbot_response(system_prompt_default + messages)
     answer = auto_wrap_inline_latex(answer)
     answer = auto_wrap_list_latex(answer)
+
     return {"response": answer}
