@@ -1,125 +1,201 @@
-# ✅ app.py — Streamlit 최종 개선본 (Send → /chat, Streaming → /chat_stream, 줄바꿈 + 이모지 + code mode 표시)
-
-import streamlit as st
-import requests
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from typing import List, Dict
 import os
 from dotenv import load_dotenv
+from openai import OpenAI
+import math
+import re
+import ast
 
-# Load env
+# Load API key
 load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# API URL 설정
-API_URL = os.getenv("FASTAPI_URL")
-if not API_URL:
-    st.error("❌ API_URL is not set! Please check your environment variables.")
-    st.stop()
+app = FastAPI()
 
-# messages 초기화
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "system", "content": "You are a helpful assistant."}
+class ChatRequest(BaseModel):
+    messages: List[Dict[str, str]]
+
+# ---- LaTeX 후처리 함수들 ----
+
+def auto_wrap_inline_latex(response: str) -> str:
+    inline_latex_pattern = re.compile(r'(\\(?:frac|sqrt|sum|int|log|sin|cos|tan)[^$ \n]*)')
+
+    def replacer(match):
+        return f'$$ {match.group(1)} $$'
+
+    response = inline_latex_pattern.sub(replacer, response)
+    return response
+
+def auto_wrap_list_latex(response: str) -> str:
+    lines = response.split('\n')
+    new_lines = []
+    for line in lines:
+        if re.match(r'^\s*[-*]\s', line) and re.search(r'\\(frac|sqrt|sum|int|log|sin|cos|tan)', line):
+            content = line.strip()
+            content_no_bullet = re.sub(r'^[-*]\s+', '', content)
+            new_lines.append(f'- $$ {content_no_bullet} $$')
+        else:
+            new_lines.append(line)
+    return '\n'.join(new_lines)
+
+# ---- GPT 호출 ----
+
+def get_chatbot_response(messages):
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages
+    )
+    return response.choices[0].message.content.strip()
+
+# Streaming generator
+def gpt_stream(messages):
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=messages,
+        stream=True
+    )
+    for chunk in response:
+        delta = chunk.choices[0].delta
+        content = getattr(delta, "content", None)
+        if content:
+            content = auto_wrap_inline_latex(content)
+            content = auto_wrap_list_latex(content)
+            yield content
+
+# ---- 안전한 exec 처리 ----
+
+def safe_exec_function(code_str: str) -> str:
+    try:
+        # AST 파싱
+        tree = ast.parse(code_str)
+
+        # 허용 노드
+        allowed_nodes = (
+            ast.Module, ast.Import, ast.ImportFrom,
+            ast.Assign, ast.Expr, ast.Call, ast.Name,
+            ast.BinOp, ast.UnaryOp, ast.Num, ast.Constant,  # Num <3.8 / Constant >=3.8
+            ast.List, ast.Tuple, ast.Dict, ast.Subscript, ast.Index, ast.Slice,
+            ast.Attribute, ast.Compare, ast.If, ast.IfExp, ast.BoolOp,
+            ast.And, ast.Or, ast.Not, ast.For, ast.While, ast.Break,
+            ast.Continue, ast.Pass, ast.Return
+        )
+
+        # 허용된 Import는 math 만
+        allowed_imports = {"math"}
+
+        for node in ast.walk(tree):
+            if not isinstance(node, allowed_nodes):
+                raise ValueError(f"금지된 노드 발견: {type(node).__name__}")
+
+            # Import 제한
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name != "math":
+                        raise ValueError(f"금지된 import 발견: {alias.name}")
+            elif isinstance(node, ast.ImportFrom):
+                if node.module != "math":
+                    raise ValueError(f"금지된 import from 발견: {node.module}")
+
+        # 안전한 실행 환경
+        safe_globals = {
+            "__builtins__": {},
+            "math": math
+        }
+        safe_locals = {}
+
+        # 실행
+        exec(compile(tree, filename="<safe_exec>", mode="exec"), safe_globals, safe_locals)
+
+        # 결과 찾기
+        if "_result" in safe_locals:
+            return f"계산 결과: {safe_locals['_result']}"
+        else:
+            return "✅ 코드 실행 완료 (결과는 별도 출력 없음)."
+
+    except Exception as e:
+        return f"코드 실행 중 오류 발생: {e}"
+
+# ---- /chat endpoint ----
+
+@app.post("/chat")
+async def chat_endpoint(req: ChatRequest):
+    messages = req.messages
+    user_msgs = [m["content"] for m in messages if m["role"] == "user"]
+    last_msg = user_msgs[-1] if user_msgs else ""
+
+    code_keywords = ["python 코드", "파이썬 코드", "python function", "python program"]
+
+    if any(keyword in last_msg for keyword in code_keywords):
+        system_prompt = [
+            {"role": "system", "content": "You are an assistant that writes safe Python code to perform mathematical computations. "
+                                          "The code must use only standard math functions (via 'import math'), and must not use any external modules. "
+                                          "It must be written as executable Python code. "
+                                          "If applicable, assign the final result to a variable named _result so that it can be read after execution. "
+                                          "Do not use file I/O, OS operations, or network operations. Do not use exec, eval, compile, __import__, open, or any OS-related functions. "
+                                          "Only generate pure Python math code."},
+            {"role": "user", "content": last_msg}
+        ]
+        code = get_chatbot_response(system_prompt)
+        result = safe_exec_function(code)
+        return {"response": f"```\n{code}\n```\n\n{result}"}
+
+    # Default prompt (강화됨)
+    system_prompt_default = [
+        {"role": "system", "content": "You are a helpful assistant. "
+                                      "If your output includes a mathematical formula or expression, always surround it with $$...$$. "
+                                      "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math. "
+                                      "If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$. "
+                                      "If your output is normal text, do not use $$."}
     ]
 
-# user_input_key_num 및 user_input_key 초기화
-if "user_input_key_num" not in st.session_state:
-    st.session_state.user_input_key_num = 0
-if "user_input_key" not in st.session_state:
-    st.session_state.user_input_key = f"user_input_{st.session_state.user_input_key_num}"
+    answer = get_chatbot_response(system_prompt_default + messages)
+    answer = auto_wrap_inline_latex(answer)
+    answer = auto_wrap_list_latex(answer)
 
-# last_is_code 초기화
-if "last_is_code" not in st.session_state:
-    st.session_state["last_is_code"] = False
+    return {"response": answer}
 
-# UI 구성
-st.title("💬 Chatbot with Streaming + Context (FastAPI + GPT)")
+# ---- /chat_stream endpoint ----
 
-# reply_box 전역 선언
-reply_box = st.empty()
+@app.post("/chat_stream")
+async def chat_stream_endpoint(req: ChatRequest):
+    messages = req.messages
+    user_msgs = [m["content"] for m in messages if m["role"] == "user"]
+    last_msg = user_msgs[-1] if user_msgs else ""
 
-# code 키워드 설정
-code_keywords = ["python 코드", "파이썬 코드", "python function", "python program"]
+    code_keywords = ["python 코드", "파이썬 코드", "python function", "python program"]
 
-# 이전 대화 표시
-for i, msg in enumerate(st.session_state.messages):
-    if msg["role"] == "user":
-        st.write(f"🧑‍💼 **You:** {msg['content']}")
+    if any(keyword in last_msg for keyword in code_keywords):
+        system_prompt = [
+            {"role": "system", "content": "You are an assistant that writes safe Python code to perform mathematical computations. "
+                                          "The code must use only standard math functions (via 'import math'), and must not use any external modules. "
+                                          "It must be written as executable Python code. "
+                                          "If applicable, assign the final result to a variable named _result so that it can be read after execution. "
+                                          "Do not use file I/O, OS operations, or network operations. Do not use exec, eval, compile, __import__, open, or any OS-related functions. "
+                                          "Only generate pure Python math code."},
+            {"role": "user", "content": last_msg}
+        ]
+        code = get_chatbot_response(system_prompt)
+        result = safe_exec_function(code)
+        stream_text = f"```\n{code}\n```\n\n{result}"
 
-        # 현재 user message 가 code mode 인지 표시 flag 저장
-        st.session_state["last_is_code"] = any(keyword in msg["content"] for keyword in code_keywords)
+        def stream_gen():
+            yield stream_text
 
-    elif msg["role"] == "assistant":
-        safe_content = msg["content"]
+        return StreamingResponse(stream_gen(), media_type="text/plain")
 
-        # Bot prefix 결정
-        if st.session_state.get("last_is_code", False):
-            bot_prefix = "🤖 **Bot (code mode):**"
-        else:
-            bot_prefix = "🤖 **Bot:**"
-
-        # 출력
-        if i == len(st.session_state.messages) - 1 and st.session_state.get("streaming", False):
-            reply_box.markdown(f"{bot_prefix} {safe_content}", unsafe_allow_html=False)
-        else:
-            st.markdown(f"{bot_prefix} {safe_content}", unsafe_allow_html=False)
-
-# 사용자 입력
-user_input = st.text_area("Your message:", height=100, key=st.session_state.user_input_key)
-
-# Send 버튼
-if st.button("Send"):
-    user_input_value = st.session_state.get(st.session_state.user_input_key, "").strip()
-
-    if user_input_value != "":
-        st.session_state.messages.append({
-            "role": "user",
-            "content": user_input_value
-        })
-
-        st.session_state.user_input_key_num += 1
-        st.session_state.user_input_key = f"user_input_{st.session_state.user_input_key_num}"
-
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": ""
-        })
-        st.session_state.streaming = True
-
-        with st.spinner("Assistant is responding..."):
-            response = requests.post(
-                API_URL + "/chat",  # ✅ /chat endpoint 호출 (stream 제거)
-                json={"messages": st.session_state.messages}
-            )
-
-            if response.status_code == 200:
-                try:
-                    resp_json = response.json()
-                    if "response" in resp_json:
-                        st.session_state.messages[-1]["content"] = resp_json["response"]
-                    else:
-                        st.session_state.messages[-1]["content"] = f"❌ Invalid response format: {resp_json}"
-                except Exception as e:
-                    st.session_state.messages[-1]["content"] = f"❌ Error parsing JSON: {str(e)}\nResponse text: {response.text}"
-            else:
-                st.session_state.messages[-1]["content"] = f"❌ Error {response.status_code}: {response.text}"
-
-            # Bot prefix 결정
-            if st.session_state.get("last_is_code", False):
-                bot_prefix = "🤖 **Bot (code mode):**"
-            else:
-                bot_prefix = "🤖 **Bot:**"
-
-            reply_box.markdown(f"{bot_prefix} {st.session_state.messages[-1]['content']}", unsafe_allow_html=False)
-
-        st.session_state.streaming = False
-        st.rerun()
-
-
-# Clear Chat 버튼
-if st.button("Clear Chat"):
-    st.session_state.messages = [
-        {"role": "system", "content": "You are a helpful assistant."}
+    # Default prompt (강화됨)
+    system_prompt_default = [
+        {"role": "system", "content": "You are a helpful assistant. "
+                                      "If your output includes a mathematical formula or expression, always surround it with $$...$$. "
+                                      "Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math. "
+                                      "If your output includes inline LaTeX expressions (\\frac, \\sqrt, \\sum, etc.) in lists or bullet points, also enclose the entire list item with $$...$$. "
+                                      "If your output is normal text, do not use $$."}
     ]
-    st.session_state.user_input_key_num += 1
-    st.session_state.user_input_key = f"user_input_{st.session_state.user_input_key_num}"
-    st.session_state["last_is_code"] = False  # 리셋
-    st.rerun()
+
+    return StreamingResponse(
+        gpt_stream(system_prompt_default + messages),
+        media_type="text/plain"
+    )
