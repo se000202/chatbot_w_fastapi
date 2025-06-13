@@ -37,7 +37,7 @@ def extract_numbers(text: str) -> List[float]:
     return numbers
 
 # 안전한 exec 처리 (함수 정의 후 별도 호출)
-def safe_exec_function(code: str, args: List) -> str:
+def safe_exec_function(code: str) -> str:
     try:
         # AST 검사
         tree = ast.parse(code)
