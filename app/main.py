@@ -145,6 +145,7 @@ async def chat_endpoint(req: ChatRequest):
             The function must take zero arguments.
             Do NOT call the function.
             Do NOT assign the result to a variable.
+            0,1 and Negative number is not a Prime.
             Do NOT use 'eval', 'exec', 'os', '__', or any unsafe functions.
             You MUST NOT assign the result to a variable inside the function.
 
