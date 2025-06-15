@@ -138,15 +138,13 @@ async def chat_endpoint(req: ChatRequest):
         system_prompt_math = [
             {"role": "system", "content": """
             You are a math assistant who writes correct Python code to solve the given math problem.
-            Assume that 'math' is already imported for you. Do not use any import statements.
+            Assume that 'math' is already imported for you. Do NOT use any import statements.
             Your goal is to output only the function definition (no explanations, no markdown, no variable assignment).
             The function name MUST be 'f'.
             The function must take zero arguments.
             Do NOT call the function.
             Do NOT assign the result to a variable.
-            Allowed imports: import math only.
             Do NOT use 'eval', 'exec', 'os', '__', or any unsafe functions.
-
             You MUST NOT assign the result to a variable inside the function.
 
             Example:
