@@ -88,6 +88,7 @@ def safe_exec_function(code: str) -> str:
             "float": float,
             "abs": abs,
             "pow": pow,
+            "len": len
         }
 
         local_vars = {}
