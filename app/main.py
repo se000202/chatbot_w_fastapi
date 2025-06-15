@@ -24,7 +24,7 @@ class ChatRequest(BaseModel):
 # GPT 호출
 def get_chatbot_response(messages):
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4o",
         messages=messages
     )
     return response.choices[0].message.content.strip()
@@ -122,7 +122,7 @@ async def chat_endpoint(req: ChatRequest):
         system_prompt_math = [
             {"role": "system", "content": """
             You are a math assistant who writes correct Python code to solve the given math problem.
-
+            Assume that 'math' is already imported for you. Do not use any import statements.
             Your goal is to output only the function definition (no explanations, no markdown, no variable assignment).
             The function name MUST be 'f'.
             The function must take zero arguments.
@@ -134,8 +134,8 @@ async def chat_endpoint(req: ChatRequest):
             You MUST NOT assign the result to a variable inside the function.
 
             Example:
-            def f(a, b):
-                return a + b
+            def f():
+                return (2 + 7)
             """}
         ]
         code = get_chatbot_response(system_prompt_math + messages)
