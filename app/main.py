@@ -39,7 +39,7 @@ def extract_numbers(text: str) -> List[float]:
 
 # 안전한 exec 처리 (함수 정의 후 별도 호출)
 def safe_exec_function(code: str) -> str:
-        sys.set_int_max_str_digits(10000)
+        sys.set_int_max_str_digits(100000)
         tree = ast.parse(code)
         
         # Define dangerous nodes to check for
