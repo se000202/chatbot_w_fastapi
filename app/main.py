@@ -104,6 +104,22 @@ def safe_exec_function(code: str) -> str:
 
         return f"계산 결과: {result}"
 
+def clean_code_block(code: str) -> str:
+    """
+    GPT 응답에서 ```python 또는 ``` 등의 마크다운 코드 블럭을 제거
+    """
+    lines = code.strip().splitlines()
+
+    # 앞뒤에 ```로 둘러싸인 경우 제거
+    if lines and lines[0].strip().startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip().endswith("```"):
+        lines = lines[:-1]
+
+    return "\n".join(lines)
+
+
+
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     messages = req.messages
@@ -139,8 +155,7 @@ async def chat_endpoint(req: ChatRequest):
             """}
         ]
         code = get_chatbot_response(system_prompt_math + messages)
-        print(f"[DEBUG] Generated code: {repr(code)}")
-
+        code = clean_code_block(code)
         result = safe_exec_function(code)
         return {"response": result}
 
