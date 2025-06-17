@@ -128,6 +128,26 @@ async def chat_endpoint(req: ChatRequest):
     messages = req.messages
     user_msgs = [m["content"] for m in messages if m["role"] == "user"]
     last_msg = user_msgs[-1] if user_msgs else ""
+    
+    if "미국주식 사관학교" in last_msg:
+        try:
+            url = "https://contents.premium.naver.com/usa/nasdaq/contents/250409170641442po"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            res = requests.get(url, headers=headers)
+            soup = BeautifulSoup(res.text, "html.parser")
+            main_container = soup.select_one("div.se-main-container")
+            texts = main_container.select("div.se-component.se-text.se-l-default")
+            content = "\n\n".join(
+                block.get_text(strip=True) for block in texts if block.get_text(strip=True)
+            )
+            system_prompt_summary = [
+                {"role": "system", "content": "You are a summarization expert who summarizes long Korean articles into 3-5 bullet points."},
+                {"role": "user", "content": content}
+            ]
+            summary = get_chatbot_response(system_prompt_summary)
+            return {"response": summary}
+        except Exception as e:
+            return {"response": f"❌ 크롤링 중 오류 발생: {e}"}
 
     # Case 1 → 수학/코드 관련 keywords
     calc_keywords = [
@@ -136,7 +156,7 @@ async def chat_endpoint(req: ChatRequest):
         "표준편차", "분산", "평균", "median", "variance", "standard deviation"
     ]
 
-    if any(keyword in last_msg for keyword in calc_keywords):
+    elif any(keyword in last_msg for keyword in calc_keywords):
         # Case 1: Python 함수 정의 요청
         system_prompt_math = [
             {"role": "system", "content": """
