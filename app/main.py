@@ -129,7 +129,11 @@ async def chat_endpoint(req: ChatRequest):
     messages = req.messages
     user_msgs = [m["content"] for m in messages if m["role"] == "user"]
     last_msg = user_msgs[-1] if user_msgs else ""
-    
+    calc_keywords = [
+        "합", "곱", "피보나치", "피보나치 수", "product of primes", "sum of primes",
+        "fibonacci", "소수", "소수의 합", "소수의 곱", "prime",
+        "표준편차", "분산", "평균", "median", "variance", "standard deviation"
+    ]
     if "미국주식 사관학교" in last_msg:
         try:
             url = "https://contents.premium.naver.com/usa/nasdaq/contents/250409170641442po"
@@ -151,12 +155,6 @@ async def chat_endpoint(req: ChatRequest):
             return {"response": f"❌ 크롤링 중 오류 발생: {e}"}
 
     # Case 1 → 수학/코드 관련 keywords
-    calc_keywords = [
-        "합", "곱", "피보나치", "피보나치 수", "product of primes", "sum of primes",
-        "fibonacci", "소수", "소수의 합", "소수의 곱", "prime",
-        "표준편차", "분산", "평균", "median", "variance", "standard deviation"
-    ]
-
     elif any(keyword in last_msg for keyword in calc_keywords):
         # Case 1: Python 함수 정의 요청
         system_prompt_math = [
