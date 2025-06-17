@@ -12,7 +12,8 @@ from math import prod
 from functools import reduce
 import re  # 추가
 import sys
-
+import requests
+from bs4 import BeautifulSoup
 # Load API key
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
