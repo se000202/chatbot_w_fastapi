@@ -175,8 +175,11 @@ async def chat_endpoint(req: ChatRequest):
         code = get_chatbot_response(system_prompt_math + messages)
         if code:
             code = clean_code_block(code)
-            result = safe_exec_function(code)
-            return {"response": result}
+            try:
+                result = safe_exec_function(code)
+                return {"response": result}
+            except Exception as e:
+                return {"response": f"❌ 코드 실행 중 오류 발생: {str(e)}"}
         else:
             system_prompt_general = [
                 {"role": "system", "content": """
