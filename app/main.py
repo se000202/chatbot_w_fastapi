@@ -94,19 +94,23 @@ def safe_exec_function(code: str) -> str:
         #     "len": len
         # }
 
-        # local_vars = {}
+        local_vars = {}
 
         # 함수 정의 실행
-        exec(code)
+        exec(code, locals = local_vars)
 
-        # 함수 호출
-        # if "f" not in local_vars:
-        #     raise ValueError("함수 f 가 정의되어 있지 않습니다!")
+        if "main" not in local_vars:
+        raise ValueError("main 함수가 정의되지 않았습니다.")
 
-        func = local_vars["f"]
-        result = func()
+        # main 함수 실행
+        import io
+        from contextlib import redirect_stdout
+        output = io.StringIO()
+        with redirect_stdout(output):
+        local_vars["main"]()
+        result = output.getvalue().strip()
 
-        return f"계산 결과: {result}"
+    return f"계산 결과: {result}"
 
 def clean_code_block(code: str) -> str:
     """
