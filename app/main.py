@@ -78,30 +78,30 @@ def safe_exec_function(code: str) -> str:
                     raise ValueError("위험합니다.")
 
         # 안전한 환경 구성
-        safe_globals = {
-            "__builtins__": {},
-            "math": math,
-            "sum": sum,
-            "range": range,
-            "prod": prod,
-            "round": round,
-            "reduce": reduce,
-            "all": all,
-            "int": int,
-            "float": float,
-            "abs": abs,
-            "pow": pow,
-            "len": len
-        }
+        # safe_globals = {
+        #     "__builtins__": {},
+        #     "math": math,
+        #     "sum": sum,
+        #     "range": range,
+        #     "prod": prod,
+        #     "round": round,
+        #     "reduce": reduce,
+        #     "all": all,
+        #     "int": int,
+        #     "float": float,
+        #     "abs": abs,
+        #     "pow": pow,
+        #     "len": len
+        # }
 
-        local_vars = {}
+        # local_vars = {}
 
         # 함수 정의 실행
-        exec(code, safe_globals, local_vars)
+        exec(code)
 
         # 함수 호출
-        if "f" not in local_vars:
-            raise ValueError("함수 f 가 정의되어 있지 않습니다!")
+        # if "f" not in local_vars:
+        #     raise ValueError("함수 f 가 정의되어 있지 않습니다!")
 
         func = local_vars["f"]
         result = func()
@@ -160,38 +160,47 @@ async def chat_endpoint(req: ChatRequest):
         # Case 1: Python 함수 정의 요청
         system_prompt_math = [
             {"role": "system", "content": """
-            You are a math assistant who writes correct Python code to solve the given math problem.
-            Assume that 'math' is already imported for you. Do NOT use any import statements.
-            Your goal is to output only the function definition (no explanations, no markdown, no variable assignment).
-            The function name MUST be 'f'.
-            The function must take zero arguments.
-            Do NOT call the function.
-            Do NOT assign the result to a variable.
-            0,1 and Negative number is not a Prime.
+            You are professional python programmer which does the two Following tasks.
+            Task 1 : When the chat is given from the user, you should determine whether given chat can be converted to the task,
+            which can be solved by using the python program.
+            If the given chat can be converted into task, return the string which initial three character is "YES," and continued string is 
+            the Task which the chat is converted.
+            Otherwise, return "NO!,"
+            
+            Task 2 : You had recevied the string from Task 1. If the first four character is "NO!," return empty string. 
+            Otherwise write the python program which solves the Task of the given string.
+            The program must include the function named "main" and the must call the function "main".
+            the main function must print the result of output which the task requires.
             Do NOT use 'eval', 'exec', 'os', '__', or any unsafe functions.
             You MUST NOT assign the result to a variable inside the function.
-
+            
             Example:
-            def f():
-                return (2 + 7)
+            - Given Task : "YES, what is the sum from 1 to 10? 
+            - Example Respone:
+            def main(S,E):
+                s = 0
+                for i in range(S,E+1):
+                    s += i
+                print(s)
+            main(1,10)
+            Note : 0,1 and Negative number is not a Prime.
             """}
         ]
         code = get_chatbot_response(system_prompt_math + messages)
-        code = clean_code_block(code)
-        result = safe_exec_function(code)
-        return {"response": result}
-
-    else:
-        # Case 3: 일반 챗봇
-        system_prompt_general = [
-            {"role": "system", "content": """
-            You are a helpful assistant. 
-            If your output includes a mathematical formula or expression, always surround it with $$...$$.
-            Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math.
-            If your output is normal text, do not use $$.
-            If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks.
-            You are not a Python code generator unless specifically asked to write Python code.
-            """}
-        ]
-        answer = get_chatbot_response(system_prompt_general + messages)
-        return {"response": answer}
+        if code:
+            code = clean_code_block(code)
+            result = safe_exec_function(code)
+            return {"response": result}
+        else:
+            system_prompt_general = [
+                {"role": "system", "content": """
+                You are a helpful assistant. 
+                If your output includes a mathematical formula or expression, always surround it with $$...$$.
+                Do NOT use \\( ... \\) or \\[ ... \\]. Only use $$...$$ to enclose math.
+                If your output is normal text, do not use $$.
+                If your output includes multiple paragraphs or lists, always use double line breaks (\\n\\n) for line breaks.
+                You are not a Python code generator unless specifically asked to write Python code.
+                """}
+            ]
+            answer = get_chatbot_response(system_prompt_general + messages)
+            return {"response": answer}
