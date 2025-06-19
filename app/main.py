@@ -77,23 +77,6 @@ def safe_exec_function(code: str) -> str:
                 if node.attr in dangerous_nodes[ast.Attribute]:
                     raise ValueError("위험합니다.")
 
-        # 안전한 환경 구성
-        # safe_globals = {
-        #     "__builtins__": {},
-        #     "math": math,
-        #     "sum": sum,
-        #     "range": range,
-        #     "prod": prod,
-        #     "round": round,
-        #     "reduce": reduce,
-        #     "all": all,
-        #     "int": int,
-        #     "float": float,
-        #     "abs": abs,
-        #     "pow": pow,
-        #     "len": len
-        # }
-
         local_vars = {}
 
         # 함수 정의 실행
@@ -109,8 +92,7 @@ def safe_exec_function(code: str) -> str:
         with redirect_stdout(output):
             local_vars["main"]()
             result = output.getvalue().strip()
-
-    return f"계산 결과: {result}"
+        return f"계산 결과: {result}"
 
 def clean_code_block(code: str) -> str:
     """
