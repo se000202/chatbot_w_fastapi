@@ -100,15 +100,15 @@ def safe_exec_function(code: str) -> str:
         exec(code, locals = local_vars)
 
         if "main" not in local_vars:
-        raise ValueError("main 함수가 정의되지 않았습니다.")
+            raise ValueError("main 함수가 정의되지 않았습니다.")
 
         # main 함수 실행
         import io
         from contextlib import redirect_stdout
         output = io.StringIO()
         with redirect_stdout(output):
-        local_vars["main"]()
-        result = output.getvalue().strip()
+            local_vars["main"]()
+            result = output.getvalue().strip()
 
     return f"계산 결과: {result}"
 
