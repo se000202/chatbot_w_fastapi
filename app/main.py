@@ -115,37 +115,9 @@ async def chat_endpoint(req: ChatRequest):
     messages = req.messages
     user_msgs = [m["content"] for m in messages if m["role"] == "user"]
     last_msg = user_msgs[-1] if user_msgs else ""
-    calc_keywords = [
-        "합", "곱", "피보나치", "피보나치 수", "product of primes", "sum of primes",
-        "fibonacci", "소수", "소수의 합", "소수의 곱", "prime",
-        "표준편차", "분산", "평균", "median", "variance", "standard deviation"
-    ]
-    # Case 1 : 미국주식 사관학교가 input에 있을 떄
-    if "미국주식 사관학교" in last_msg:
-        try:
-            url = "https://contents.premium.naver.com/usa/nasdaq/contents/250409170641442po"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            res = requests.get(url, headers=headers)
-            soup = BeautifulSoup(res.text, "html.parser")
-            main_container = soup.select_one("div.se-main-container")
-            texts = main_container.select("div.se-component.se-text.se-l-default")
-            content = "\n\n".join(
-                block.get_text(strip=True) for block in texts if block.get_text(strip=True)
-            )
-            system_prompt_summary = [
-                {"role": "system", "content": "You are a summarization expert who summarizes long Korean articles into 3-5 bullet points."},
-                {"role": "user", "content": content}
-            ]
-            summary = get_chatbot_response(system_prompt_summary)
-            return {"response": summary}
-        except Exception as e:
-            return {"response": f"❌ 크롤링 중 오류 발생: {e}"}
-
-    # Case 2: 수학/코드 관련 keywords
-    elif any(keyword in last_msg for keyword in calc_keywords):
-        # Case 1: Python 함수 정의 요청
-        system_prompt_math = [
-            {"role": "system", "content": """
+    # Case 1: Python 함수 정의 요청
+    system_prompt_math = [
+        {"role": "system", "content": """
             You are professional python programmer which does the two Following tasks.
             Task 1 : When the chat is given from the user, you should determine whether given chat can be converted to the task,
             which can be solved by using the python program.
@@ -172,16 +144,16 @@ async def chat_endpoint(req: ChatRequest):
             Note : 0,1 and Negative number is not a Prime.
             """}
         ]
-        code = get_chatbot_response(system_prompt_math + messages)
-        if code:
-            code = clean_code_block(code)
-            try:
-                result = safe_exec_function(code)
-                return {"response": result}
-            except Exception as e:
-                return {"response": f"❌ 코드 실행 중 오류 발생: {str(e)}"}
-        else:
-            system_prompt_general = [
+    code = get_chatbot_response(system_prompt_math + messages)
+    if code:
+        code = clean_code_block(code)
+        try:
+            result = safe_exec_function(code)
+            return {"response": result}
+        except Exception as e:
+            return {"response": f"❌ 코드 실행 중 오류 발생: {str(e)}"}
+    else:
+        system_prompt_general = [
                 {"role": "system", "content": """
                 You are a helpful assistant. 
                 If your output includes a mathematical formula or expression, always surround it with $$...$$.
@@ -191,5 +163,5 @@ async def chat_endpoint(req: ChatRequest):
                 You are not a Python code generator unless specifically asked to write Python code.
                 """}
             ]
-            answer = get_chatbot_response(system_prompt_general + messages)
-            return {"response": answer}
+        answer = get_chatbot_response(system_prompt_general + messages)
+        return {"response": answer}
