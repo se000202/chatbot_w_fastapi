@@ -115,25 +115,29 @@ async def chat_endpoint(req: ChatRequest):
     messages = req.messages
     user_msgs = [m["content"] for m in messages if m["role"] == "user"]
     last_msg = user_msgs[-1] if user_msgs else ""
-    # Case 1: Python 함수 정의 요청
-    system_prompt_math = [
+    # Case 1: 문제의 정의 요청
+    system_prompt_task = [
         {"role": "system", "content": """
-            You are professional python programmer which does the two Following tasks.
+            You are professional python programmer which does the Following task.
             Task 1 : When the chat is given from the user, you should determine whether given chat can be converted to the task,
             which can be solved by using the python program.
             If the given chat can be converted into task, return the string which initial three character is "YES," and continued string is 
             the Task which the chat is converted.
             Otherwise, return "NO!,"
-            
-            Task 2 : You had recevied the string from Task 1. If the first four character is "NO!," return empty string. 
-            Otherwise write the python program which solves the Task of the given string.
+            """}
+        ]
+    code = get_chatbot_response(system_prompt_task + messages)
+    if code != "NO!":
+        system_prompt_python = [{"role": "system","contnet": """
+            You had recevied the string from User.
+            write the python program which solves the Task of the given string.
             The program must include the function named "main" and the must call the function "main".
             the main function must print the result of output which the task requires.
             Do NOT use 'eval', 'exec', 'os', '__', or any unsafe functions.
             You MUST NOT assign the result to a variable inside the function.
             
             Example:
-            - Given Task : "YES, what is the sum from 1 to 10? 
+            - Task: sum of integers between 1 and 10
             - Example Respone:
             def main(S,E):
                 s = 0
@@ -142,10 +146,9 @@ async def chat_endpoint(req: ChatRequest):
                 print(s)
             main(1,10)
             Note : 0,1 and Negative number is not a Prime.
-            """}
+        """}                
         ]
-    code = get_chatbot_response(system_prompt_math + messages)
-    if code:
+        code = get_chatbot_response(system_prompt_python + messages)
         code = clean_code_block(code)
         try:
             result = safe_exec_function(code)
