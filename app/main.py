@@ -138,15 +138,12 @@ Rules:
         ]
         code_response = get_chatbot_response(code_prompt)
         cleaned_code = clean_code_block(code_response)
-        formatted_code = format_code_for_markdown(cleaned_code)
+        #formatted_code = format_code_for_markdown(cleaned_code)
 
         if cleaned_code and "def main" in cleaned_code and "main(" in cleaned_code:
             try:
                 result = safe_exec_function_with_trace(cleaned_code)
-                return {"response": f"{formatted_code}
-
-🧠 실행된 함수와 결과:
-{result}"}
+                return {"response": f"{cleaned_code}\n\n🧠 실행된 함수와 결과:\n{result}"}
             except Exception as e:
                 return {"response": f"❌ 코드 실행 중 오류 발생: {str(e)}"}
         else:
