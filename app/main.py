@@ -93,10 +93,13 @@ def safe_exec_function_with_trace(code: str) -> str:
     local_vars = {}
     output = io.StringIO()
     with redirect_stdout(output):
-        exec(code, {}, local_vars)
-        if "main" not in local_vars:
-            return "❌ main 함수가 정의되어 있지 않습니다."
-        local_vars["main"]()
+        try:
+            exec(code, local_vars)
+            if "main" not in local_vars:
+                return "❌ main 함수가 정의되어 있지 않습니다."
+            local_vars["main"]()
+        except Exception as e:
+            return f"❌ 실행 중 오류 발생: {str(e)}"
     result = output.getvalue().strip()
     called_funcs = extract_called_functions(code)
     trace_info = f"🧠 실행된 함수: {', '.join(set(called_funcs)) or '없음'}\n\n🖨️ 출력 결과: {result}"
