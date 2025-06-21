@@ -134,8 +134,7 @@ Rules:
         if cleaned_code and "def main" in cleaned_code and "main(" in cleaned_code:
             try:
                 result = safe_exec_function_with_trace(cleaned_code)
-                return return {"response": f"```python\n{cleaned_code}\n```\n\n{result}"}
-
+                return {"response": f"```python\n{cleaned_code}\n```\n\n{result}"}
             except Exception as e:
                 return {"response": f"❌ 코드 실행 중 오류 발생: {str(e)}"}
         else:
@@ -152,6 +151,7 @@ Use plain language and structured lists if needed.
         ]
         general_response = get_chatbot_response(general_prompt)
         return {"response": general_response or "❌ GPT 응답이 null입니다. 다시 시도해주세요."}
+
 
 # @app.post("/chat")
 # async def chat_endpoint(req: ChatRequest):
