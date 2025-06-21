@@ -134,8 +134,8 @@ Rules:
         if cleaned_code and "def main" in cleaned_code and "main(" in cleaned_code:
             try:
                 result = safe_exec_function_with_trace(cleaned_code)
-                return {"response": f"```python\n{cleaned_code}\n```
-\n{result}"}
+                return return {"response": f"```python\n{cleaned_code}\n```\n\n{result}"}
+
             except Exception as e:
                 return {"response": f"❌ 코드 실행 중 오류 발생: {str(e)}"}
         else:
