@@ -46,6 +46,11 @@ def clean_code_block(text: str) -> str:
 
     return text.strip()
 
+def format_code_for_markdown(code: str) -> str:
+    if not code.strip().startswith("```"):
+        return f"```python\n{code.strip()}\n```"
+    return code.strip()
+
 def extract_called_functions(code: str) -> List[str]:
     try:
         tree = ast.parse(code)
@@ -102,7 +107,7 @@ def safe_exec_function_with_trace(code: str) -> str:
             return f"❌ 실행 중 오류 발생: {str(e)}"
     result = output.getvalue().strip()
     called_funcs = extract_called_functions(code)
-    trace_info = f"🧠 실행된 함수: {', '.join(set(called_funcs)) or '없음'}\n\n🖨️ 출력 결과: {result}"
+    trace_info = f"\U0001f9e0 실행된 함수: {', '.join(set(called_funcs)) or '없음'}\n\n\U0001f5a8️ 출력 결과: {result}"
     return trace_info
 
 @app.post("/chat")
@@ -133,11 +138,12 @@ Rules:
         ]
         code_response = get_chatbot_response(code_prompt)
         cleaned_code = clean_code_block(code_response)
+        formatted_code = format_code_for_markdown(cleaned_code)
 
         if cleaned_code and "def main" in cleaned_code and "main(" in cleaned_code:
             try:
                 result = safe_exec_function_with_trace(cleaned_code)
-                return {"response": f"```python\n{cleaned_code}\n```\n\n{result}"}
+                return {"response": f"{formatted_code}\n\n{result}"}
             except Exception as e:
                 return {"response": f"❌ 코드 실행 중 오류 발생: {str(e)}"}
         else:
@@ -154,6 +160,7 @@ Use plain language and structured lists if needed.
         ]
         general_response = get_chatbot_response(general_prompt)
         return {"response": general_response or "❌ GPT 응답이 null입니다. 다시 시도해주세요."}
+
 
 
 # @app.post("/chat")
