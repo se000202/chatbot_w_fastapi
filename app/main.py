@@ -148,7 +148,7 @@ Rules:
                 result = safe_exec_function(code)
                 return {"response": result}
             except Exception as e:
-                return {"response": f"❌ 코드 실행 중 오류 발생: {str(e)}"}
+                return {"response": f"❌ 코드 실행 중 오류 발생: {str(e) + code}"}
         else:
             return {"response": "❌ GPT가 실행 가능한 코드를 생성하지 못했습니다."}
 
