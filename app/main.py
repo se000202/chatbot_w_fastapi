@@ -1,5 +1,3 @@
-# ✅ FastAPI 최종본 — /chat 단일 endpoint + 함수 기반 safe_exec + args 자동 파싱 + 일반 챗봇 처리
-
 from fastapi import FastAPI
 from pydantic import BaseModel
 from typing import List, Dict
@@ -7,13 +5,13 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 import ast
-import math
-from math import prod
-from functools import reduce
-import re  # 추가
 import sys
+import re
 import requests
 from bs4 import BeautifulSoup
+from contextlib import redirect_stdout
+import io
+
 # Load API key
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -23,93 +21,86 @@ app = FastAPI()
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
 
-# GPT 호출
 def get_chatbot_response(messages):
     cleaned = [m for m in messages if m.get("content") is not None]
     response = client.chat.completions.create(
         model="gpt-4o",
-        messages= cleaned
+        messages=cleaned
     )
     content = response.choices[0].message.content.strip()
-    return content.strip() if content else ""
+    return content if content else ""
 
-# 숫자 자동 파싱 함수
-def extract_numbers(text: str) -> List[float]:
-    # 정수 또는 소수 모두 추출
-    matches = re.findall(r'-?\d+\.?\d*', text)
-    numbers = [float(m) if '.' in m else int(m) for m in matches]
-    return numbers
+def clean_code_block(text: str) -> str:
+    code_blocks = re.findall(r"```(?:python)?\n(.*?)```", text, re.DOTALL)
+    if code_blocks:
+        return code_blocks[0].strip()
 
-# 안전한 exec 처리 (함수 정의 후 별도 호출)
-def safe_exec_function(code: str) -> str:
-        sys.set_int_max_str_digits(100000)
+    lines = text.splitlines()
+    code_start = -1
+    for i, line in enumerate(lines):
+        if line.strip().startswith("def "):
+            code_start = i
+            break
+    if code_start != -1:
+        return "\n".join(lines[code_start:]).strip()
+
+    return text.strip()
+
+def extract_called_functions(code: str) -> List[str]:
+    try:
         tree = ast.parse(code)
-        
-        # Define dangerous nodes to check for
-        dangerous_nodes = {
-            ast.Call: ['eval', 'exec', 'open', 'system', 'popen', 'spawn'],
-            ast.Import: ['os', 'sys', 'subprocess'],
-            ast.ImportFrom: ['os', 'sys', 'subprocess'],
-            ast.Attribute: ['__import__', 'system', 'popen', 'spawn']
-        }
-        
-        for node in ast.walk(tree):
-            # Check for dangerous function calls
-            if isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name):
-                    if node.func.id in dangerous_nodes[ast.Call]:
-                       raise ValueError("위험합니다.")
-                elif isinstance(node.func, ast.Attribute):
-                    if node.func.attr in dangerous_nodes[ast.Call]:
-                        raise ValueError("위험합니다.")
-            
-            # Check for dangerous imports
-            if isinstance(node, ast.Import):
-                for name in node.names:
-                    if name.name in dangerous_nodes[ast.Import]:
-                        raise ValueError("위험합니다.")
-            
-            # Check for dangerous from imports
-            if isinstance(node, ast.ImportFrom):
-                if node.module in dangerous_nodes[ast.ImportFrom]:
+    except SyntaxError:
+        return []
+    called_funcs = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                called_funcs.append(node.func.id)
+            elif isinstance(node.func, ast.Attribute):
+                called_funcs.append(node.func.attr)
+    return called_funcs
+
+def safe_exec_function_with_trace(code: str) -> str:
+    sys.set_int_max_str_digits(100000)
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return f"❌ 코드 문법 오류: {str(e)}"
+
+    dangerous_nodes = {
+        ast.Call: ['eval', 'exec', 'open', 'system', 'popen', 'spawn'],
+        ast.Import: ['os', 'sys', 'subprocess'],
+        ast.ImportFrom: ['os', 'sys', 'subprocess'],
+        ast.Attribute: ['__import__', 'system', 'popen', 'spawn']
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in dangerous_nodes[ast.Call]:
+                raise ValueError("위험합니다.")
+            if isinstance(node.func, ast.Attribute) and node.func.attr in dangerous_nodes[ast.Call]:
+                raise ValueError("위험합니다.")
+        if isinstance(node, ast.Import):
+            for name in node.names:
+                if name.name in dangerous_nodes[ast.Import]:
                     raise ValueError("위험합니다.")
-            
-            # Check for dangerous attributes
-            if isinstance(node, ast.Attribute):
-                if node.attr in dangerous_nodes[ast.Attribute]:
-                    raise ValueError("위험합니다.")
+        if isinstance(node, ast.ImportFrom):
+            if node.module in dangerous_nodes[ast.ImportFrom]:
+                raise ValueError("위험합니다.")
+        if isinstance(node, ast.Attribute):
+            if node.attr in dangerous_nodes[ast.Attribute]:
+                raise ValueError("위험합니다.")
 
-        local_vars = {}
-
-        # 함수 정의 실행
-        exec(code, locals = local_vars)
-
+    local_vars = {}
+    output = io.StringIO()
+    with redirect_stdout(output):
+        exec(code, {}, local_vars)
         if "main" not in local_vars:
-            raise ValueError("main 함수가 정의되지 않았습니다.")
-
-        # main 함수 실행
-        import io
-        from contextlib import redirect_stdout
-        output = io.StringIO()
-        with redirect_stdout(output):
-            local_vars["main"]()
-            result = output.getvalue().strip()
-        return f"계산 결과: {result}"
-
-def clean_code_block(code: str) -> str:
-    """
-    GPT 응답에서 ```python 또는 ``` 등의 마크다운 코드 블럭을 제거
-    """
-    lines = code.strip().splitlines()
-
-    # 앞뒤에 ```로 둘러싸인 경우 제거
-    if lines and lines[0].strip().startswith("```"):
-        lines = lines[1:]
-    if lines and lines[-1].strip().endswith("```"):
-        lines = lines[:-1]
-
-    return "\n".join(lines)
-
+            return "❌ main 함수가 정의되어 있지 않습니다."
+        local_vars["main"]()
+    result = output.getvalue().strip()
+    called_funcs = extract_called_functions(code)
+    trace_info = f"🧠 실행된 함수: {', '.join(set(called_funcs)) or '없음'}\n\n🖨️ 출력 결과: {result}"
+    return trace_info
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
@@ -117,17 +108,14 @@ async def chat_endpoint(req: ChatRequest):
     user_msgs = [m["content"] for m in messages if m["role"] == "user"]
     last_msg = user_msgs[-1] if user_msgs else ""
 
-    # 1️⃣ GPT1: 판단자
     judge_prompt = [
         {"role": "system", "content": "You classify if the user's message can be solved using Python code. Respond with 'YES, ...' or 'NO!,'."},
         {"role": "user", "content": last_msg}
     ]
-    judge_response = get_chatbot_response([m for m in judge_prompt if m.get("content") is not None])
+    judge_response = get_chatbot_response(judge_prompt)
 
     if judge_response and judge_response.strip().startswith("YES,"):
         task_description = judge_response.strip()[4:].strip()
-
-        # 2️⃣ GPT2: 코드 생성자
         code_prompt = [
             {"role": "system", "content": """
 You are a Python code generator. Generate a program that solves the given task.
@@ -140,20 +128,20 @@ Rules:
 """},
             {"role": "user", "content": task_description}
         ]
-        code_response = get_chatbot_response([m for m in code_prompt if m.get("content") is not None])
+        code_response = get_chatbot_response(code_prompt)
+        cleaned_code = clean_code_block(code_response)
 
-        if code_response and "def main" in code_response and "main(" in code_response:
-            code = clean_code_block(code_response)
+        if cleaned_code and "def main" in cleaned_code and "main(" in cleaned_code:
             try:
-                result = safe_exec_function(code)
-                return {"response": result}
+                result = safe_exec_function_with_trace(cleaned_code)
+                return {"response": f"```python\n{cleaned_code}\n```
+\n{result}"}
             except Exception as e:
-                return {"response": f"❌ 코드 실행 중 오류 발생: {str(e) + code}"}
+                return {"response": f"❌ 코드 실행 중 오류 발생: {str(e)}"}
         else:
             return {"response": "❌ GPT가 실행 가능한 코드를 생성하지 못했습니다."}
 
     else:
-        # 3️⃣ GPT3: 일반 assistant
         general_prompt = [
             {"role": "system", "content": """
 You are a helpful assistant.
@@ -162,7 +150,7 @@ Use plain language and structured lists if needed.
 """},
             {"role": "user", "content": last_msg}
         ]
-        general_response = get_chatbot_response([m for m in general_prompt if m.get("content") is not None])
+        general_response = get_chatbot_response(general_prompt)
         return {"response": general_response or "❌ GPT 응답이 null입니다. 다시 시도해주세요."}
 
 # @app.post("/chat")
