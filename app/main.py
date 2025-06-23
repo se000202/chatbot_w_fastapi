@@ -8,6 +8,8 @@ import ast
 import sys
 import re
 import requests
+import json
+import asyncio
 from bs4 import BeautifulSoup
 from contextlib import redirect_stdout
 import io
@@ -21,20 +23,44 @@ app = FastAPI()
 class ChatRequest(BaseModel):
     messages: List[Dict[str, str]]
 
-def get_chatbot_response(messages):
+function_definitions = [
+    {
+        "name": "set_timer_action",
+        "description": "몇 초 뒤에 어떤 동작을 예약합니다.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "delay_seconds": {
+                    "type": "integer",
+                    "description": "얼마나 지연할 것인지 (초)"
+                },
+                "action": {
+                    "type": "string",
+                    "description": "지연 후 실행할 작업"
+                }
+            },
+            "required": ["delay_seconds", "action"]
+        }
+    }
+]
+
+async def set_timer_action(delay_seconds: int, action: str) -> str:
+    await asyncio.sleep(delay_seconds)
+    return f"{delay_seconds}초 후: {action} 완료되었습니다."
+
+def get_chatbot_response(messages, use_functions=False):
     cleaned = [m for m in messages if m.get("content") is not None]
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=cleaned
-    )
-    content = response.choices[0].message.content.strip()
-    return content if content else ""
+    kwargs = {"model": "gpt-4o", "messages": cleaned}
+    if use_functions:
+        kwargs["functions"] = function_definitions
+        kwargs["function_call"] = "auto"
+    response = client.chat.completions.create(**kwargs)
+    return response.choices[0].message
 
 def clean_code_block(text: str) -> str:
     code_blocks = re.findall(r"```(?:python)?\n(.*?)```", text, re.DOTALL)
     if code_blocks:
         return code_blocks[0].strip()
-
     lines = text.splitlines()
     code_start = -1
     for i, line in enumerate(lines):
@@ -43,13 +69,7 @@ def clean_code_block(text: str) -> str:
             break
     if code_start != -1:
         return "\n".join(lines[code_start:]).strip()
-
     return text.strip()
-
-def format_code_for_markdown(code: str) -> str:
-    if not code.strip().startswith("```"):
-        return f"```python\n{code.strip()}\n```"
-    return code.strip()
 
 def extract_called_functions(code: str) -> List[str]:
     try:
@@ -71,7 +91,6 @@ def safe_exec_function_with_trace(code: str) -> str:
         tree = ast.parse(code)
     except SyntaxError as e:
         return f"❌ 코드 문법 오류: {str(e)}"
-
     dangerous_nodes = {
         ast.Call: ['eval', 'exec', 'open', 'system', 'popen', 'spawn'],
         ast.Import: ['os', 'sys', 'subprocess'],
@@ -94,7 +113,6 @@ def safe_exec_function_with_trace(code: str) -> str:
         if isinstance(node, ast.Attribute):
             if node.attr in dangerous_nodes[ast.Attribute]:
                 raise ValueError("위험합니다.")
-
     local_vars = {}
     output = io.StringIO()
     with redirect_stdout(output):
@@ -116,14 +134,27 @@ async def chat_endpoint(req: ChatRequest):
     user_msgs = [m["content"] for m in messages if m["role"] == "user"]
     last_msg = user_msgs[-1] if user_msgs else ""
 
+    function_message = get_chatbot_response(messages, use_functions=True)
+    if function_message.function_call:
+        fn_name = function_message.function_call.name
+        args = json.loads(function_message.function_call.arguments)
+        if fn_name == "set_timer_action":
+            result = await set_timer_action(**args)
+            messages.append({
+                "role": "function",
+                "name": fn_name,
+                "content": result
+            })
+            final = get_chatbot_response(messages)
+            return {"response": final.content.strip()}
+
     judge_prompt = [
         {"role": "system", "content": "You classify if the user's message can be solved using Python code. Respond with 'YES, ...' or 'NO!,'."},
         {"role": "user", "content": last_msg}
     ]
     judge_response = get_chatbot_response(judge_prompt)
-
-    if judge_response and judge_response.strip().startswith("YES,"):
-        task_description = judge_response.strip()[4:].strip()
+    if judge_response and judge_response.content.strip().startswith("YES,"):
+        task_description = judge_response.content.strip()[4:].strip()
         code_prompt = [
             {"role": "system", "content": """
 You are a Python code generator. Generate a program that solves the given task.
@@ -133,13 +164,9 @@ Rules:
 - Call main() at the end
 - Use print() inside main() for output
 - Do not use eval, exec, os, __import__, or unsafe functions
-"""},
-            {"role": "user", "content": task_description}
-        ]
+"""}, {"role": "user", "content": task_description}]
         code_response = get_chatbot_response(code_prompt)
-        cleaned_code = clean_code_block(code_response)
-        #formatted_code = format_code_for_markdown(cleaned_code)
-
+        cleaned_code = clean_code_block(code_response.content)
         if cleaned_code and "def main" in cleaned_code and "main(" in cleaned_code:
             try:
                 result = safe_exec_function_with_trace(cleaned_code)
@@ -149,17 +176,15 @@ Rules:
         else:
             return {"response": "❌ GPT가 실행 가능한 코드를 생성하지 못했습니다."}
 
-    else:
-        general_prompt = [
-            {"role": "system", "content": """
+    general_prompt = [
+        {"role": "system", "content": """
 You are a helpful assistant.
 If your output includes mathematical expressions, wrap them with $$...$$.
 Use plain language and structured lists if needed.
-"""},
-            {"role": "user", "content": last_msg}
-        ]
-        general_response = get_chatbot_response(general_prompt)
-        return {"response": general_response or "❌ GPT 응답이 null입니다. 다시 시도해주세요."}
+"""}, {"role": "user", "content": last_msg}]
+    general_response = get_chatbot_response(general_prompt)
+    return {"response": general_response.content.strip() if general_response.content else "❌ GPT 응답이 null입니다. 다시 시도해주세요."}
+
 
 
 
